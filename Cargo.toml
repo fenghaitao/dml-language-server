@@ -25,6 +25,11 @@ name = "dfa"
 test = false
 path = "src/dfa/main.rs"
 
+[[bin]]
+name = "dml-mcp-server"
+test = false
+path = "src/mcp/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 clap = { version = "4.2", features = ["cargo", "derive"] }
@@ -52,3 +57,5 @@ urlencoding = "2.1"
 utf8-read = "0.4"
 walkdir = "2"
 heck = "0.5"
+tokio = { version = "1.0", features = ["full"] }
+async-trait = "0.1"

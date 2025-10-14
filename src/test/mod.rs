@@ -1,5 +1,9 @@
 //  © 2024 Intel Corporation
 //  SPDX-License-Identifier: Apache-2.0 and MIT
+
+#[cfg(test)]
+mod mcp_unit_tests;
+
 use logos::Logos;
 
 use crate::analysis::parsing::lexer::TokenKind;
