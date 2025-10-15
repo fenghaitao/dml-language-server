@@ -1,0 +1,188 @@
+/*
+ * Sample DML device for testing the Python Language Server port
+ * 
+ * © 2024 Intel Corporation
+ * SPDX-License-Identifier: Apache-2.0 and MIT
+ */
+
+dml 1.4;
+
+import "utility.dml";
+
+device SampleDevice {
+    parameter desc = "A sample device for testing DML language server functionality";
+    parameter documentation = "This device demonstrates various DML constructs";
+    
+    // Device parameters
+    parameter byte_order = "little-endian";
+    parameter register_size = 4;
+    
+    // Main register bank
+    bank regs {
+        parameter register_size = 4;
+        parameter byte_order = "little-endian";
+        
+        // Device identification register
+        register device_id @ 0x00 {
+            parameter size = 4;
+            parameter desc = "Device identification register";
+            parameter hard_reset_value = 0x12345678;
+            
+            field vendor_id @ [31:16] {
+                parameter desc = "Vendor identification";
+            }
+            
+            field device_id @ [15:0] {
+                parameter desc = "Device identification";
+            }
+            
+            method read() -> (uint32) {
+                // Return the device ID
+                return default();
+            }
+        }
+        
+        // Status and control register
+        register status_ctrl @ 0x04 {
+            parameter size = 4;
+            parameter desc = "Status and control register";
+            
+            field ready @ [0] {
+                parameter desc = "Device ready status";
+                parameter readable = true;
+                parameter writable = false;
+            }
+            
+            field error @ [1] {
+                parameter desc = "Error status";
+                parameter readable = true;
+                parameter writable = true;
+            }
+            
+            field enable @ [8] {
+                parameter desc = "Device enable control";
+                parameter readable = true;
+                parameter writable = true;
+            }
+            
+            field reset @ [9] {
+                parameter desc = "Software reset trigger";
+                parameter readable = false;
+                parameter writable = true;
+            }
+            
+            field reserved @ [31:10] {
+                parameter desc = "Reserved bits";
+                parameter readable = false;
+                parameter writable = false;
+            }
+            
+            method write(uint32 value) {
+                // Handle special reset behavior
+                if (value & (1 << 9)) {
+                    // Reset triggered
+                    call $reset_device();
+                    // Clear the reset bit
+                    value &= ~(1 << 9);
+                }
+                default(value);
+            }
+        }
+        
+        // Data register
+        register data @ 0x08 {
+            parameter size = 4;
+            parameter desc = "Data register for device operations";
+            
+            method read() -> (uint32) {
+                // Custom read logic
+                log info: "Reading data register";
+                return default();
+            }
+            
+            method write(uint32 value) {
+                // Custom write logic
+                log info: "Writing data register: 0x%x", value;
+                default(value);
+                
+                // Trigger processing if enabled
+                if (regs.status_ctrl.enable) {
+                    call $process_data(value);
+                }
+            }
+        }
+        
+        // Configuration registers array
+        register config[4] @ 0x10 + $i * 4 {
+            parameter size = 4;
+            parameter desc = "Configuration register " + $i;
+            
+            field value @ [31:0] {
+                parameter desc = "Configuration value";
+            }
+        }
+    }
+    
+    // Interrupt handling
+    connect irq {
+        parameter documentation = "Interrupt request output";
+        interface signal;
+    }
+    
+    // Device methods
+    method init() {
+        // Initialize device state
+        regs.status_ctrl.ready = 0;
+        regs.status_ctrl.error = 0;
+        regs.status_ctrl.enable = 0;
+        regs.data.val = 0;
+        
+        // Initialize configuration registers
+        local int i;
+        for (i = 0; i < 4; i++) {
+            regs.config[i].value = 0;
+        }
+        
+        log info: "Device initialized";
+    }
+    
+    method reset_device() {
+        // Reset device to initial state
+        call $init();
+        log info: "Device reset";
+    }
+    
+    method process_data(uint32 data) {
+        // Process the data
+        local uint32 result;
+        
+        // Simple processing example
+        result = data ^ regs.config[0].value;
+        
+        if (result & 0x80000000) {
+            // Set error flag
+            regs.status_ctrl.error = 1;
+            // Trigger interrupt
+            irq.signal_raise();
+        } else {
+            // Clear error flag
+            regs.status_ctrl.error = 0;
+            // Set ready flag
+            regs.status_ctrl.ready = 1;
+        }
+        
+        log info: "Processed data: 0x%x -> 0x%x", data, result;
+    }
+    
+    method hard_reset() {
+        // Hardware reset
+        call $init();
+        log info: "Hardware reset performed";
+    }
+    
+    // Attribute to demonstrate attribute syntax
+    attribute session_data is (uint64_attr) {
+        parameter documentation = "Session-specific data storage";
+        parameter desc = "Stores session data for the device";
+    }
+}

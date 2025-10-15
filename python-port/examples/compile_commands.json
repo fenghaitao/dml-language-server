@@ -1,0 +1,14 @@
+{
+  "/absolute/path/to/examples/sample_device.dml": {
+    "includes": [
+      "/usr/local/include/simics",
+      "/usr/local/include/dml",
+      "./lib"
+    ],
+    "dmlc_flags": [
+      "--simics-api=7",
+      "--dml-version=1.4",
+      "--warn-unused"
+    ]
+  }
+}

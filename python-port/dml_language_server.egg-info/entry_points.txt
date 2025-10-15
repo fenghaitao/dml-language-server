@@ -1,0 +1,4 @@
+[console_scripts]
+dfa = dml_language_server.dfa.main:main
+dls = dml_language_server.main:main
+dml-mcp-server = dml_language_server.mcp.main:main

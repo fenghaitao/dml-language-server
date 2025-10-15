@@ -1,0 +1,77 @@
+/*
+ * Utility DML library for common device functionality
+ * 
+ * © 2024 Intel Corporation
+ * SPDX-License-Identifier: Apache-2.0 and MIT
+ */
+
+dml 1.4;
+
+// Common register field templates
+template readable_field {
+    parameter readable = true;
+    parameter writable = false;
+}
+
+template writable_field {
+    parameter readable = false;
+    parameter writable = true;
+}
+
+template rw_field {
+    parameter readable = true;
+    parameter writable = true;
+}
+
+// Common register templates
+template status_register {
+    parameter size = 4;
+    parameter desc = "Status register";
+    
+    method read() -> (uint32) {
+        log info, 4: "Reading status register";
+        return default();
+    }
+}
+
+template control_register {
+    parameter size = 4;
+    parameter desc = "Control register";
+    
+    method write(uint32 value) {
+        log info, 4: "Writing control register: 0x%x", value;
+        default(value);
+    }
+}
+
+// Utility methods template
+template device_utils {
+    method log_register_access(const char *reg_name, uint32 value, bool is_write) {
+        if (is_write) {
+            log info: "Write to %s: 0x%08x", reg_name, value;
+        } else {
+            log info: "Read from %s: 0x%08x", reg_name, value;
+        }
+    }
+    
+    method validate_alignment(uint64 address, uint32 size) -> (bool) {
+        return (address % size) == 0;
+    }
+}
+
+// Common interrupt handling template
+template interrupt_device {
+    connect irq {
+        interface signal;
+    }
+    
+    method raise_interrupt() {
+        irq.signal_raise();
+        log info: "Interrupt raised";
+    }
+    
+    method lower_interrupt() {
+        irq.signal_lower();
+        log info: "Interrupt lowered";
+    }
+}

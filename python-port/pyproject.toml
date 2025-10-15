@@ -1,0 +1,106 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dml-language-server"
+version = "0.9.14"
+description = "Simics DML language server - Python port"
+authors = [
+    {name = "Intel Corporation (Python port)"},
+]
+license = {text = "Apache-2.0 OR MIT"}
+readme = "README.md"
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Language Servers",
+]
+dependencies = [
+    "pygls>=1.0.0",
+    "lsprotocol>=2023.0.0",
+    "click>=8.0.0",
+    "pydantic>=2.0.0",
+    "aiofiles>=23.0.0",
+    "asyncio-mqtt>=0.16.0",
+    "watchdog>=3.0.0",
+    "regex>=2023.0.0",
+    "jsonrpc-base>=2.0.0",
+    "typing-extensions>=4.0.0",
+    "dataclasses-json>=0.6.0",
+    "pathspec>=0.11.0",
+    "tenacity>=8.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+mcp = [
+    "mcp>=1.0.0",
+    "pydantic-ai>=0.0.1",
+]
+
+[project.scripts]
+dls = "dml_language_server.main:main"
+dfa = "dml_language_server.dfa.main:main"
+dml-mcp-server = "dml_language_server.mcp.main:main"
+
+[project.urls]
+Homepage = "https://github.com/intel/dml-language-server"
+Repository = "https://github.com/intel/dml-language-server"
+Issues = "https://github.com/intel/dml-language-server/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["dml_language_server*"]
+
+[tool.setuptools.package-data]
+"dml_language_server" = ["*.json", "*.md", "*.txt"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "-ra -q --strict-markers --strict-config"
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"

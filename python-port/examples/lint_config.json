@@ -1,0 +1,25 @@
+{
+  "enabled_rules": [
+    "indentation",
+    "spacing", 
+    "naming"
+  ],
+  "disabled_rules": [],
+  "rule_configs": {
+    "indentation": {
+      "indent_size": 4,
+      "enabled": true,
+      "level": "warning"
+    },
+    "spacing": {
+      "enabled": true,
+      "level": "info"
+    },
+    "naming": {
+      "enabled": true,
+      "level": "warning",
+      "enforce_device_pascal_case": true,
+      "enforce_method_snake_case": true
+    }
+  }
+}
