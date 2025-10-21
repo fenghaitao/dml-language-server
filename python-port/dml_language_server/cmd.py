@@ -80,15 +80,22 @@ def run_cli(
                 
                 # Display syntax errors
                 for error in errors:
-                    print(f"{dml_file}:{error.line}:{error.column}: error: {error.message}")
+                    line = error.span.range.start.line + 1  # Convert to 1-based
+                    column = error.span.range.start.column + 1  # Convert to 1-based
+                    print(f"{dml_file}:{line}:{column}: error: {error.message}")
                     total_errors += 1
                 
                 # Run linting if enabled
                 if lint_engine:
-                    warnings = lint_engine.lint_file(dml_file, content, analysis)
-                    for warning in warnings:
-                        print(f"{dml_file}:{warning.line}:{warning.column}: warning: {warning.message}")
-                        total_warnings += 1
+                    # Get the IsolatedAnalysis for this file
+                    file_analysis = analysis.file_analyses.get(dml_file.resolve())
+                    if file_analysis:
+                        warnings = lint_engine.lint_file(dml_file, content, file_analysis)
+                        for warning in warnings:
+                            line = warning.span.range.start.line + 1  # Convert to 1-based
+                            column = warning.span.range.start.column + 1  # Convert to 1-based
+                            print(f"{dml_file}:{line}:{column}: warning: {warning.message}")
+                            total_warnings += 1
                         
             except Exception as e:
                 logger.error(f"Failed to analyze {dml_file}: {e}")
@@ -142,7 +149,9 @@ def analyze_single_file(file_path: Path, config: Optional[Config] = None) -> int
         # Display results
         if errors:
             for error in errors:
-                print(f"{file_path}:{error.line}:{error.column}: error: {error.message}")
+                line = error.span.range.start.line + 1  # Convert to 1-based
+                column = error.span.range.start.column + 1  # Convert to 1-based
+                print(f"{file_path}:{line}:{column}: error: {error.message}")
             return 1
         else:
             print(f"{file_path}: OK")

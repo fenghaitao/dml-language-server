@@ -17,11 +17,6 @@ from lsprotocol.types import (
     ServerCapabilities,
     TextDocumentSyncKind,
     CompletionOptions,
-    HoverProvider,
-    DefinitionProvider,
-    ReferencesProvider,
-    DocumentSymbolProvider,
-    WorkspaceSymbolProvider,
     DidOpenTextDocumentParams,
     DidChangeTextDocumentParams,
     DidCloseTextDocumentParams,
@@ -29,7 +24,7 @@ from lsprotocol.types import (
     CompletionParams,
     HoverParams,
     DefinitionParams,
-    ReferencesParams,
+    ReferenceParams,
     DocumentSymbolParams,
     WorkspaceSymbolParams,
     Position as LspPosition,
@@ -116,11 +111,11 @@ class DMLLanguageServer(LanguageServer):
                         trigger_characters=["."],
                         resolve_provider=False
                     ),
-                    hover_provider=HoverProvider(),
-                    definition_provider=DefinitionProvider(),
-                    references_provider=ReferencesProvider(),
-                    document_symbol_provider=DocumentSymbolProvider(),
-                    workspace_symbol_provider=WorkspaceSymbolProvider(),
+                    hover_provider=True,
+                    definition_provider=True,
+                    references_provider=True,
+                    document_symbol_provider=True,
+                    workspace_symbol_provider=True,
                 )
             )
         
@@ -259,7 +254,7 @@ class DMLLanguageServer(LanguageServer):
                 return None
         
         @self.feature("textDocument/references")
-        async def references(params: ReferencesParams) -> Optional[List[Any]]:
+        async def references(params: ReferenceParams) -> Optional[List[Any]]:
             """Handle find references request."""
             try:
                 uri = params.text_document.uri

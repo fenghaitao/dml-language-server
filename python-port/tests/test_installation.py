@@ -127,7 +127,7 @@ def test_sample_file_analysis():
         from dml_language_server.file_management import FileManager
         from dml_language_server.analysis import DeviceAnalysis
         
-        sample_file = Path(__file__).parent / "examples" / "sample_device.dml"
+        sample_file = Path(__file__).parent.parent / "examples" / "sample_device.dml"
         
         if not sample_file.exists():
             print(f"⚠ Sample file not found: {sample_file}")
