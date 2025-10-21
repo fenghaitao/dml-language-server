@@ -1,7 +1,8 @@
 """
-Analysis module for the DML Language Server.
+Enhanced Analysis module for the DML Language Server.
 
-Provides parsing, semantic analysis, and symbol resolution for DML code.
+Provides comprehensive parsing, semantic analysis, symbol resolution, and reference tracking for DML code.
+This is an enhanced version porting concepts from the Rust implementation.
 
 © 2024 Intel Corporation
 SPDX-License-Identifier: Apache-2.0 and MIT
@@ -9,64 +10,176 @@ SPDX-License-Identifier: Apache-2.0 and MIT
 
 import logging
 from pathlib import Path
-from typing import List, Dict, Set, Optional, Any
+from typing import List, Dict, Set, Optional, Any, Union, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
+from collections import defaultdict
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 from ..config import Config
 from ..file_management import FileManager
 from ..span import ZeroSpan, ZeroPosition, ZeroRange, SpanBuilder
 from ..lsp_data import DMLDiagnostic, DMLDiagnosticSeverity, DMLLocation, DMLSymbol, DMLSymbolKind
+from .types import DMLError, DMLErrorKind, ReferenceKind, SymbolReference, NodeRef
+from .parsing.enhanced_parser import EnhancedDMLParser, TemplateDeclaration, DeviceDeclaration
+from .parsing.template_system import TemplateSystem
 
 logger = logging.getLogger(__name__)
 
 
-class DMLErrorKind(Enum):
-    """Types of DML errors."""
-    SYNTAX_ERROR = "syntax_error"
-    SEMANTIC_ERROR = "semantic_error"
-    TYPE_ERROR = "type_error"
-    UNDEFINED_SYMBOL = "undefined_symbol"
-    DUPLICATE_SYMBOL = "duplicate_symbol"
-    IMPORT_ERROR = "import_error"
-
-
-@dataclass
-class DMLError:
-    """Represents an error in DML code."""
-    kind: DMLErrorKind
-    message: str
-    span: ZeroSpan
-    severity: DMLDiagnosticSeverity = DMLDiagnosticSeverity.ERROR
-    code: Optional[str] = None
-    
-    def to_diagnostic(self) -> DMLDiagnostic:
-        """Convert to diagnostic."""
-        return DMLDiagnostic(
-            span=self.span,
-            message=self.message,
-            severity=self.severity,
-            code=self.code
-        )
-
-
-@dataclass
-class SymbolReference:
-    """A reference to a symbol."""
-    symbol_name: str
-    location: DMLLocation
-    definition_location: Optional[DMLLocation] = None
-
-
 @dataclass
 class SymbolDefinition:
-    """A symbol definition."""
+    """Represents a symbol definition with references."""
     symbol: DMLSymbol
     references: List[SymbolReference] = field(default_factory=list)
+    scope_chain: List[str] = field(default_factory=list)
+    
+    def add_reference(self, ref: SymbolReference):
+        """Add a reference to this symbol."""
+        self.references.append(ref)
+
+
+class SymbolScope:
+    """Enhanced scope management for symbol resolution."""
+    
+    def __init__(self, name: str, span: ZeroSpan, parent: Optional['SymbolScope'] = None):
+        self.name = name
+        self.span = span
+        self.parent = parent
+        self.children: List['SymbolScope'] = []
+        self.symbols: Dict[str, SymbolDefinition] = {}
+        self.references: List[SymbolReference] = []
+        
+        if parent:
+            parent.children.append(self)
+    
+    def add_symbol(self, symbol: DMLSymbol) -> SymbolDefinition:
+        """Add a symbol to this scope."""
+        definition = SymbolDefinition(symbol=symbol, scope_chain=self.get_scope_chain())
+        self.symbols[symbol.name] = definition
+        return definition
+    
+    def add_reference(self, ref: SymbolReference):
+        """Add a reference to this scope."""
+        self.references.append(ref)
+    
+    def resolve_symbol(self, name: str) -> Optional[SymbolDefinition]:
+        """Resolve a symbol by name, searching up the scope chain."""
+        # First check current scope
+        if name in self.symbols:
+            return self.symbols[name]
+        
+        # Check parent scopes
+        if self.parent:
+            return self.parent.resolve_symbol(name)
+        
+        return None
+    
+    def get_scope_chain(self) -> List[str]:
+        """Get the full scope chain from root to this scope."""
+        if self.parent:
+            return self.parent.get_scope_chain() + [self.name]
+        return [self.name]
+    
+    def find_scope_at_position(self, pos: ZeroPosition) -> Optional['SymbolScope']:
+        """Find the innermost scope containing the given position."""
+        if not self.span.range.contains_position(pos):
+            return None
+        
+        # Check children first (innermost scope)
+        for child in self.children:
+            if result := child.find_scope_at_position(pos):
+                return result
+        
+        # If no child contains the position, this scope does
+        return self
+    
+    def get_all_symbols(self, include_children: bool = True) -> List[SymbolDefinition]:
+        """Get all symbols in this scope and optionally its children."""
+        symbols = list(self.symbols.values())
+        
+        if include_children:
+            for child in self.children:
+                symbols.extend(child.get_all_symbols(include_children=True))
+        
+        return symbols
+
+
+class AdvancedSymbolTable:
+    """Enhanced symbol table with cross-file resolution and reference tracking."""
+    
+    def __init__(self):
+        self.global_symbols: Dict[str, SymbolDefinition] = {}
+        self.file_scopes: Dict[Path, SymbolScope] = {}
+        self.references: Dict[str, List[SymbolReference]] = defaultdict(list)
+        self._lock = threading.RLock()
+    
+    def create_file_scope(self, file_path: Path, span: ZeroSpan) -> SymbolScope:
+        """Create a root scope for a file."""
+        with self._lock:
+            scope = SymbolScope(name=f"file:{file_path.name}", span=span)
+            self.file_scopes[file_path] = scope
+            return scope
+    
+    def add_global_symbol(self, symbol: DMLSymbol) -> SymbolDefinition:
+        """Add a symbol to the global scope."""
+        with self._lock:
+            definition = SymbolDefinition(symbol=symbol, scope_chain=["global"])
+            self.global_symbols[symbol.name] = definition
+            return definition
+    
+    def add_reference(self, ref: SymbolReference):
+        """Add a reference to the symbol table."""
+        with self._lock:
+            self.references[ref.node_ref.name].append(ref)
+    
+    def resolve_symbol(self, name: str, file_path: Optional[Path] = None, 
+                      position: Optional[ZeroPosition] = None) -> Optional[SymbolDefinition]:
+        """Resolve a symbol with context-aware lookup."""
+        with self._lock:
+            # If we have file and position context, start with local scope
+            if file_path and position and file_path in self.file_scopes:
+                file_scope = self.file_scopes[file_path]
+                if local_scope := file_scope.find_scope_at_position(position):
+                    if symbol := local_scope.resolve_symbol(name):
+                        return symbol
+            
+            # Check file-level scope
+            if file_path and file_path in self.file_scopes:
+                if symbol := self.file_scopes[file_path].resolve_symbol(name):
+                    return symbol
+            
+            # Check global scope
+            return self.global_symbols.get(name)
+    
+    def find_references(self, symbol_name: str) -> List[SymbolReference]:
+        """Find all references to a symbol."""
+        with self._lock:
+            return self.references.get(symbol_name, []).copy()
+    
+    def get_symbols_in_scope(self, file_path: Path, position: ZeroPosition) -> List[SymbolDefinition]:
+        """Get all symbols visible from a given position."""
+        with self._lock:
+            symbols = []
+            
+            if file_path in self.file_scopes:
+                file_scope = self.file_scopes[file_path]
+                if local_scope := file_scope.find_scope_at_position(position):
+                    # Get symbols from current scope and parents
+                    current = local_scope
+                    while current:
+                        symbols.extend(current.symbols.values())
+                        current = current.parent
+            
+            # Add global symbols
+            symbols.extend(self.global_symbols.values())
+            
+            return symbols
 
 
 class IsolatedAnalysis:
-    """Analysis of a single file without dependencies."""
+    """Enhanced analysis of a single file with advanced scope and reference tracking."""
     
     def __init__(self, file_path: Path, content: str):
         self.file_path = file_path
@@ -74,32 +187,72 @@ class IsolatedAnalysis:
         self.span_builder = SpanBuilder(str(file_path))
         self.span_builder.set_content(content)
         
+        # Create file-level scope
+        file_span = ZeroSpan(
+            file_path=str(file_path),
+            range=ZeroRange(
+                start=ZeroPosition(line=0, column=0),
+                end=ZeroPosition(line=len(content.splitlines()), column=0)
+            )
+        )
+        self.root_scope = SymbolScope(name=f"file:{file_path.name}", span=file_span)
+        
         # Analysis results
         self.errors: List[DMLError] = []
         self.symbols: List[DMLSymbol] = []
-        self.symbol_table: Dict[str, SymbolDefinition] = {}
+        self.symbol_definitions: Dict[str, SymbolDefinition] = {}
+        self.references: List[SymbolReference] = []
         self.imports: List[str] = []
         self.dml_version: Optional[str] = None
+        self.dependencies: Set[Path] = set()
+        
+        # Enhanced parsing components
+        self.enhanced_parser: Optional[EnhancedDMLParser] = None
+        self.template_system = TemplateSystem()
+        self.ast_declarations: List = []
         
         # Parse the file
         self._parse()
     
     def _parse(self) -> None:
-        """Parse the file content."""
+        """Parse the DML file using enhanced parser and template system."""
         try:
-            # Basic parsing - this would be much more sophisticated in a real implementation
-            from .parsing import DMLParser
-            parser = DMLParser(self.content, str(self.file_path))
-            
-            # Parse and extract information
-            self.dml_version = parser.extract_dml_version()
-            self.imports = parser.extract_imports()
-            self.symbols = parser.extract_symbols()
-            self.errors = parser.get_errors()
+            # Try enhanced parser first
+            try:
+                self.enhanced_parser = EnhancedDMLParser(self.content, str(self.file_path))
+                self.ast_declarations = self.enhanced_parser.parse()
+                
+                # Extract basic information
+                self.errors = self.enhanced_parser.get_errors()
+                self.symbols = self.enhanced_parser.get_symbols()
+                self.references = self.enhanced_parser.get_references()
+                self.imports = self.enhanced_parser.imports
+                self.dml_version = self.enhanced_parser.dml_version
+                
+                # Initialize template system with global scope
+                self.template_system.initialize_template_scope(self.root_scope)
+                
+                # Process AST declarations
+                self._process_ast_declarations()
+                
+                logger.debug(f"Enhanced parser processed {len(self.symbols)} symbols, {len(self.errors)} errors")
+                
+            except Exception as enhanced_error:
+                logger.warning(f"Enhanced parser failed for {self.file_path}: {enhanced_error}, falling back to basic parser")
+                
+                # Fallback to basic parser
+                from .parsing import DMLParser
+                parser = DMLParser(self.content, str(self.file_path))
+                
+                # Parse and extract information
+                self.dml_version = parser.extract_dml_version()
+                self.imports = parser.extract_imports()
+                self.symbols = parser.extract_symbols()
+                self.errors = parser.get_errors()
             
             # Build symbol table
             for symbol in self.symbols:
-                if symbol.name in self.symbol_table:
+                if symbol.name in self.symbol_definitions:
                     # Duplicate symbol
                     error = DMLError(
                         kind=DMLErrorKind.DUPLICATE_SYMBOL,
@@ -108,7 +261,9 @@ class IsolatedAnalysis:
                     )
                     self.errors.append(error)
                 else:
-                    self.symbol_table[symbol.name] = SymbolDefinition(symbol=symbol)
+                    self.symbol_definitions[symbol.name] = SymbolDefinition(symbol=symbol)
+                    # Also add to scope
+                    self.root_scope.add_symbol(symbol)
                     
         except Exception as e:
             logger.error(f"Failed to parse {self.file_path}: {e}")
@@ -120,6 +275,43 @@ class IsolatedAnalysis:
             )
             self.errors.append(error)
     
+    def _process_ast_declarations(self) -> None:
+        """Process AST declarations for template resolution and symbol extraction."""
+        templates_to_process = []
+        devices_to_process = []
+        
+        # First pass: collect templates and devices
+        for declaration in self.ast_declarations:
+            if isinstance(declaration, TemplateDeclaration):
+                templates_to_process.append(declaration)
+                self.template_system.add_template(declaration)
+            elif isinstance(declaration, DeviceDeclaration):
+                devices_to_process.append(declaration)
+        
+        # Second pass: process devices with template application
+        for device in devices_to_process:
+            if device.templates:
+                logger.debug(f"Applying templates {device.templates} to device {device.name}")
+                
+                # Apply templates to device
+                enhanced_device = self.template_system.process_device(device)
+                
+                # Extract additional symbols from template application
+                template_symbols = self.template_system.applicator.get_template_symbols(device.name)
+                self.symbols.extend(template_symbols)
+                
+                # Add template symbols to symbol definitions
+                for symbol in template_symbols:
+                    if symbol.name not in self.symbol_definitions:
+                        self.symbol_definitions[symbol.name] = SymbolDefinition(symbol=symbol)
+                        self.root_scope.add_symbol(symbol)
+        
+        # Add template system errors
+        template_errors = self.template_system.get_all_errors()
+        if template_errors:
+            logger.debug(f"Template system found {len(template_errors)} errors")
+            self.errors.extend(template_errors)
+    
     def get_symbol_at_position(self, position: ZeroPosition) -> Optional[DMLSymbol]:
         """Get the symbol at the given position."""
         for symbol in self.symbols:
@@ -129,7 +321,7 @@ class IsolatedAnalysis:
     
     def find_symbol(self, name: str) -> Optional[SymbolDefinition]:
         """Find a symbol by name."""
-        return self.symbol_table.get(name)
+        return self.symbol_definitions.get(name)
     
     def get_diagnostics(self) -> List[DMLDiagnostic]:
         """Get all diagnostics for this file."""
@@ -137,13 +329,24 @@ class IsolatedAnalysis:
 
 
 class DeviceAnalysis:
-    """Analysis of a device and its dependencies."""
+    """Enhanced analysis engine for DML device files with advanced symbol resolution."""
     
     def __init__(self, config: Config, file_manager: FileManager):
         self.config = config
         self.file_manager = file_manager
         self.file_analyses: Dict[Path, IsolatedAnalysis] = {}
+        
+        # Enhanced symbol management
+        self.symbol_table = AdvancedSymbolTable()
+        self.reference_tracker: Dict[str, List[SymbolReference]] = defaultdict(list)
+        self.dependency_graph: Dict[Path, Set[Path]] = defaultdict(set)
+        
+        # Legacy compatibility
         self.global_symbol_table: Dict[str, List[SymbolDefinition]] = {}
+        
+        # Thread pool for parallel analysis
+        self._executor = ThreadPoolExecutor(max_workers=4)
+        self._analysis_lock = threading.RLock()
         self.dependency_order: List[Path] = []
     
     def analyze_file(self, file_path: Path, content: str) -> List[DMLError]:
@@ -226,10 +429,18 @@ class DeviceAnalysis:
         self.global_symbol_table.clear()
         
         for file_path, analysis in self.file_analyses.items():
-            for symbol_name, symbol_def in analysis.symbol_table.items():
+            # Use the new symbol_definitions attribute
+            symbol_table = getattr(analysis, 'symbol_definitions', {})
+            for symbol_name, symbol_def in symbol_table.items():
                 if symbol_name not in self.global_symbol_table:
                     self.global_symbol_table[symbol_name] = []
                 self.global_symbol_table[symbol_name].append(symbol_def)
+            
+            # Also register symbols in the enhanced symbol table
+            if hasattr(analysis, 'root_scope'):
+                scope = self.symbol_table.create_file_scope(file_path, analysis.root_scope.span)
+                for symbol in analysis.symbols:
+                    scope.add_symbol(symbol)
     
     def _resolve_import(self, file_path: Path, import_name: str) -> bool:
         """Try to resolve an import."""
@@ -301,5 +512,13 @@ __all__ = [
     "DMLError",
     "DMLErrorKind",
     "SymbolReference",
-    "SymbolDefinition"
+    "SymbolDefinition",
+    "NodeRef",
+    "ReferenceKind",
+    "SymbolScope",
+    "AdvancedSymbolTable",
+    "TemplateSystem",
+    "EnhancedDMLParser",
+    "TemplateDeclaration",
+    "DeviceDeclaration"
 ]
