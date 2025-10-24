@@ -157,6 +157,7 @@ class DMLSymbolKind(Enum):
     STRUCT = "struct"
     BITORDER = "bitorder"
     LAYOUT = "layout"
+    MODULE = "module"
 
 
 @dataclass
@@ -195,6 +196,7 @@ class DMLSymbol:
             DMLSymbolKind.STRUCT: SymbolKind.Struct,
             DMLSymbolKind.BITORDER: SymbolKind.Enum,
             DMLSymbolKind.LAYOUT: SymbolKind.Namespace,
+            DMLSymbolKind.MODULE: SymbolKind.Module,
         }
         
         # Convert location
@@ -250,6 +252,7 @@ class DMLCompletionItem:
             DMLSymbolKind.STRUCT: CompletionItemKind.Struct,
             DMLSymbolKind.BITORDER: CompletionItemKind.Enum,
             DMLSymbolKind.LAYOUT: CompletionItemKind.Module,
+            DMLSymbolKind.MODULE: CompletionItemKind.Module,
         }
         
         documentation_markup = None

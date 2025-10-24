@@ -10,7 +10,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
-from pygls.server import LanguageServer
+from pygls.lsp.server import LanguageServer
 from lsprotocol.types import (
     InitializeParams,
     InitializeResult,
