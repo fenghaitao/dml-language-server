@@ -107,7 +107,13 @@ class DMLAnalyzer:
         # Syntax and semantic analysis
         if AnalysisType.SYNTAX in analysis_types or AnalysisType.SEMANTIC in analysis_types:
             try:
+                from ..analysis.types import DMLErrorKind
                 file_errors = self.analysis_engine.analyze_file(file_path, content)
+                # Filter out import errors if no compile commands are provided
+                # (matching Rust DFA behavior which doesn't report import errors)
+                # Import errors require compile_commands.json with include paths to resolve
+                if not self.config._compile_commands:
+                    file_errors = [e for e in file_errors if e.kind != DMLErrorKind.IMPORT_ERROR]
                 errors.extend(file_errors)
                 symbols = self.analysis_engine.get_all_symbols_in_file(file_path)
             except Exception as e:

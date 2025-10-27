@@ -105,12 +105,44 @@ class DMLTokenType(Enum):
     BOOL = "bool"
     CHAR = "char"
     VOID = "void"
+    FLOAT = "float"
+    DOUBLE = "double"
+    SHORT = "short"
+    LONG = "long"
+    SIGNED = "signed"
+    UNSIGNED = "unsigned"
     AUTO = "auto"
     CONST = "const"
     STATIC = "static"
     EXTERN = "extern"
     INLINE = "inline"
     VOLATILE = "volatile"
+    
+    # Additional keywords
+    THIS = "this"
+    NEW = "new"
+    DELETE = "delete"
+    SIZEOF = "sizeof"
+    SIZE = "size"
+    TRY = "try"
+    CATCH = "catch"
+    THROW = "throw"
+    LOG = "log"
+    ASSERT = "assert"
+    LOCAL = "local"
+    DEFAULT = "default"
+    CASE = "case"
+    SWITCH = "switch"
+    THEN = "then"
+    AS = "as"
+    BITFIELDS = "bitfields"
+    SEQUENCE = "sequence"
+    STRINGIFY = "stringify"
+    WITH = "with"
+    SHARED = "shared"
+    TRUE = "true"
+    FALSE = "false"
+    NULL = "null"
     
     # Operators
     ASSIGN = "="
@@ -215,7 +247,8 @@ class DMLLexer:
         'register': DMLTokenType.REGISTER,
         'field': DMLTokenType.FIELD,
         'method': DMLTokenType.METHOD,
-        'parameter': DMLTokenType.PARAMETER,
+        'param': DMLTokenType.PARAMETER,  # DML uses 'param', not 'parameter'
+        'parameter': DMLTokenType.PARAMETER,  # Keep for compatibility
         'attribute': DMLTokenType.ATTRIBUTE,
         'template': DMLTokenType.TEMPLATE,
         'connect': DMLTokenType.CONNECT,
@@ -282,12 +315,44 @@ class DMLLexer:
         'bool': DMLTokenType.BOOL,
         'char': DMLTokenType.CHAR,
         'void': DMLTokenType.VOID,
+        'float': DMLTokenType.FLOAT,
+        'double': DMLTokenType.DOUBLE,
+        'short': DMLTokenType.SHORT,
+        'long': DMLTokenType.LONG,
+        'signed': DMLTokenType.SIGNED,
+        'unsigned': DMLTokenType.UNSIGNED,
         'auto': DMLTokenType.AUTO,
         'const': DMLTokenType.CONST,
         'static': DMLTokenType.STATIC,
         'extern': DMLTokenType.EXTERN,
         'inline': DMLTokenType.INLINE,
         'volatile': DMLTokenType.VOLATILE,
+        
+        # Additional keywords
+        'this': DMLTokenType.THIS,
+        'new': DMLTokenType.NEW,
+        'delete': DMLTokenType.DELETE,
+        'sizeof': DMLTokenType.SIZEOF,
+        'size': DMLTokenType.SIZE,
+        'try': DMLTokenType.TRY,
+        'catch': DMLTokenType.CATCH,
+        'throw': DMLTokenType.THROW,
+        'log': DMLTokenType.LOG,
+        'assert': DMLTokenType.ASSERT,
+        'local': DMLTokenType.LOCAL,
+        'default': DMLTokenType.DEFAULT,
+        'case': DMLTokenType.CASE,
+        'switch': DMLTokenType.SWITCH,
+        'then': DMLTokenType.THEN,
+        'as': DMLTokenType.AS,
+        'bitfields': DMLTokenType.BITFIELDS,
+        'sequence': DMLTokenType.SEQUENCE,
+        'stringify': DMLTokenType.STRINGIFY,
+        'with': DMLTokenType.WITH,
+        'shared': DMLTokenType.SHARED,
+        'true': DMLTokenType.TRUE,
+        'false': DMLTokenType.FALSE,
+        'null': DMLTokenType.NULL,
     }
     
     # Operator patterns (order matters - longer operators first)
@@ -1249,6 +1314,20 @@ class EnhancedDMLParser:
             return self._parse_template()
         elif self._match(DMLTokenType.TYPEDEF):
             return self._parse_typedef()
+        elif self._match(DMLTokenType.PARAMETER):
+            return self._parse_parameter()
+        elif self._match(DMLTokenType.CONNECT):
+            return self._parse_connect()
+        elif self._match(DMLTokenType.BANK):
+            return self._parse_bank()
+        elif self._match(DMLTokenType.ATTRIBUTE):
+            return self._parse_attribute()
+        elif self._match(DMLTokenType.EVENT):
+            return self._parse_event()
+        elif self._match(DMLTokenType.GROUP):
+            return self._parse_group()
+        elif self._match(DMLTokenType.CONSTANT):
+            return self._parse_constant()
         else:
             # Skip unknown tokens and try to recover
             self._advance()
@@ -1299,27 +1378,17 @@ class EnhancedDMLParser:
                 template_token = self._consume(DMLTokenType.IDENTIFIER, "Expected template name after ','")
                 templates.append(template_token.value)
         
-        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after device name")
-        
-        # Parse device body
-        parameters = []
-        banks = []
-        methods = []
-        
-        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
-            if self._match(DMLTokenType.PARAMETER):
-                parameters.append(self._parse_parameter())
-            elif self._match(DMLTokenType.BANK):
-                banks.append(self._parse_bank())
-            elif self._match(DMLTokenType.METHOD):
-                methods.append(self._parse_method())
-            else:
-                self._advance()  # Skip unknown tokens
-        
-        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after device body")
+        # Device declarations in DML 1.4 are terminated with semicolon, not braces
+        # Example: device watchdog_timer;
+        self._consume(DMLTokenType.SEMICOLON, "Expected ';' after device declaration")
         
         end_span = self._previous_token().span
         combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        # Device body is defined elsewhere in the file, not inline
+        parameters = []
+        banks = []
+        methods = []
         
         return DeviceDeclaration(combined_span, name_token.value, parameters, banks, methods, templates)
     
@@ -1483,6 +1552,95 @@ class EnhancedDMLParser:
                     documentation=f"DML language version {declaration.version}"
                 )
                 self.symbols.append(version_symbol)
+            
+            elif isinstance(declaration, ConnectDeclaration):
+                # Add connect symbol
+                connect_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.CONNECT,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Connect with {len(declaration.parameters)} parameters",
+                    documentation=f"Connect {declaration.name}"
+                )
+                self.symbols.append(connect_symbol)
+            
+            elif isinstance(declaration, BankDeclaration):
+                # Add bank symbol
+                bank_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.BANK,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Bank with {len(declaration.registers)} registers",
+                    documentation=f"Bank {declaration.name}"
+                )
+                self.symbols.append(bank_symbol)
+                
+                # Add register symbols from bank
+                for register in declaration.registers:
+                    register_symbol = DMLSymbol(
+                        name=register.name,
+                        kind=DMLSymbolKind.REGISTER,
+                        location=DMLLocation(span=register.span),
+                        detail=f"Register in bank {declaration.name}",
+                        documentation=f"Register {register.name}"
+                    )
+                    self.symbols.append(register_symbol)
+                    
+                    # Add method symbols from register
+                    if hasattr(register, 'methods'):
+                        for method in register.methods:
+                            method_symbol = DMLSymbol(
+                                name=method.name,
+                                kind=DMLSymbolKind.METHOD,
+                                location=DMLLocation(span=method.span),
+                                detail=f"Method in register {register.name}",
+                                documentation=f"Method {method.name}"
+                            )
+                            self.symbols.append(method_symbol)
+            
+            elif isinstance(declaration, AttributeDeclaration):
+                # Add attribute symbol
+                attr_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.ATTRIBUTE,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Attribute",
+                    documentation=f"Attribute {declaration.name}"
+                )
+                self.symbols.append(attr_symbol)
+            
+            elif isinstance(declaration, EventDeclaration):
+                # Add event symbol
+                event_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.EVENT,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Event",
+                    documentation=f"Event {declaration.name}"
+                )
+                self.symbols.append(event_symbol)
+            
+            elif isinstance(declaration, GroupDeclaration):
+                # Add group symbol
+                group_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.GROUP,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Group",
+                    documentation=f"Group {declaration.name}"
+                )
+                self.symbols.append(group_symbol)
+            
+            elif isinstance(declaration, ParameterDeclaration):
+                # Add parameter symbol (top-level parameter)
+                param_symbol = DMLSymbol(
+                    name=declaration.name,
+                    kind=DMLSymbolKind.PARAMETER,
+                    location=DMLLocation(span=declaration.span),
+                    detail=f"Parameter",
+                    documentation=f"Parameter {declaration.name}"
+                )
+                self.symbols.append(param_symbol)
                 
         except Exception as e:
             decl_name = getattr(declaration, 'name', None) or getattr(declaration, 'module_name', 'unknown')
@@ -1570,8 +1728,17 @@ class EnhancedDMLParser:
         start_token = self._consume(DMLTokenType.LEFT_BRACE, "Expected '{'")
         statements = []
         
-        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
-            # Skip content for now - would need full statement parsing
+        # Track brace depth to handle nested blocks correctly
+        brace_depth = 1  # We already consumed the opening brace
+        
+        while brace_depth > 0 and not self._is_at_end():
+            current = self._current_token()
+            if current.type == DMLTokenType.LEFT_BRACE:
+                brace_depth += 1
+            elif current.type == DMLTokenType.RIGHT_BRACE:
+                brace_depth -= 1
+                if brace_depth == 0:
+                    break  # Don't consume the closing brace yet
             self._advance()
         
         end_token = self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}'")
@@ -1599,7 +1766,7 @@ class EnhancedDMLParser:
         if self._check(DMLTokenType.INLINE):
             modifier = 'inline'
             self._advance()
-        elif self._check(DMLTokenType.IDENTIFIER) and self._current_token().value == 'shared':
+        elif self._check(DMLTokenType.SHARED):
             modifier = 'shared'
             self._advance()
         
@@ -1715,7 +1882,16 @@ class EnhancedDMLParser:
         if self._match(DMLTokenType.AT):
             offset = self._parse_expression()
         
-        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after register name")
+        # Parse optional template applications: is (template1, template2)
+        if self._match(DMLTokenType.IS):
+            if self._match(DMLTokenType.LEFT_PAREN):
+                # Parse template list
+                self._consume(DMLTokenType.IDENTIFIER, "Expected template name")
+                while self._match(DMLTokenType.COMMA):
+                    self._consume(DMLTokenType.IDENTIFIER, "Expected template name after ','")
+                self._consume(DMLTokenType.RIGHT_PAREN, "Expected ')' after template list")
+        
+        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after register declaration")
         
         # Parse register body
         parameters = []
@@ -1767,6 +1943,132 @@ class EnhancedDMLParser:
         combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
         
         return BankDeclaration(combined_span, name_token.value, parameters, registers, methods)
+    
+    def _parse_connect(self) -> ConnectDeclaration:
+        """Parse connect declaration."""
+        start_span = self._previous_token().span
+        
+        name_token = self._consume(DMLTokenType.IDENTIFIER, "Expected connect name")
+        
+        # Optional template application: is (template_name)
+        if self._match(DMLTokenType.IS):
+            if self._match(DMLTokenType.LEFT_PAREN):
+                self._consume(DMLTokenType.IDENTIFIER, "Expected template name")
+                self._consume(DMLTokenType.RIGHT_PAREN, "Expected ')' after template name")
+        
+        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after connect name")
+        
+        # Parse connect body
+        parameters = []
+        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
+            if self._match(DMLTokenType.PARAMETER):
+                parameters.append(self._parse_parameter())
+            else:
+                self._advance()  # Skip unknown tokens
+        
+        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after connect body")
+        
+        end_span = self._previous_token().span
+        combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        return ConnectDeclaration(combined_span, name_token.value, parameters)
+    
+    def _parse_attribute(self) -> AttributeDeclaration:
+        """Parse attribute declaration."""
+        start_span = self._previous_token().span
+        
+        name_token = self._consume(DMLTokenType.IDENTIFIER, "Expected attribute name")
+        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after attribute name")
+        
+        # Parse attribute body
+        parameters = []
+        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
+            if self._match(DMLTokenType.PARAMETER):
+                parameters.append(self._parse_parameter())
+            else:
+                self._advance()  # Skip unknown tokens
+        
+        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after attribute body")
+        
+        end_span = self._previous_token().span
+        combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        return AttributeDeclaration(combined_span, name_token.value, parameters)
+    
+    def _parse_event(self) -> EventDeclaration:
+        """Parse event declaration."""
+        start_span = self._previous_token().span
+        
+        name_token = self._consume(DMLTokenType.IDENTIFIER, "Expected event name")
+        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after event name")
+        
+        # Parse event body
+        parameters = []
+        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
+            if self._match(DMLTokenType.PARAMETER):
+                parameters.append(self._parse_parameter())
+            else:
+                self._advance()  # Skip unknown tokens
+        
+        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after event body")
+        
+        end_span = self._previous_token().span
+        combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        return EventDeclaration(combined_span, name_token.value, parameters)
+    
+    def _parse_group(self) -> GroupDeclaration:
+        """Parse group declaration."""
+        start_span = self._previous_token().span
+        
+        name_token = self._consume(DMLTokenType.IDENTIFIER, "Expected group name")
+        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after group name")
+        
+        # Parse group body
+        parameters = []
+        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
+            if self._match(DMLTokenType.PARAMETER):
+                parameters.append(self._parse_parameter())
+            else:
+                self._advance()  # Skip unknown tokens
+        
+        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after group body")
+        
+        end_span = self._previous_token().span
+        combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        return GroupDeclaration(combined_span, name_token.value, parameters)
+    
+    def _parse_constant(self) -> 'ConstantDeclaration':
+        """Parse constant declaration."""
+        start_span = self._previous_token().span
+        
+        name_token = self._consume(DMLTokenType.IDENTIFIER, "Expected constant name")
+        self._consume(DMLTokenType.ASSIGN, "Expected '=' after constant name")
+        
+        # Parse constant value (simplified - just consume until semicolon)
+        value_tokens = []
+        while not self._check(DMLTokenType.SEMICOLON) and not self._is_at_end():
+            value_tokens.append(self._current_token().value)
+            self._advance()
+        
+        self._consume(DMLTokenType.SEMICOLON, "Expected ';' after constant value")
+        
+        end_span = self._previous_token().span
+        combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
+        
+        # For now, just store the value as a string
+        value = ' '.join(str(v) for v in value_tokens)
+        
+        # Create a simple constant declaration (we'll need to define this class)
+        from dataclasses import dataclass
+        @dataclass
+        class ConstantDeclaration(DMLDeclaration):
+            value: str
+            def accept(self, visitor):
+                return visitor.visit_constant(self)
+        
+        return ConstantDeclaration(combined_span, name_token.value, value)
     
     def _parse_variable_declaration(self) -> VariableDeclaration:
         """Parse variable declaration."""

@@ -1,0 +1,145 @@
+/*
+  © 2024 Intel Corporation
+*/
+
+// watchdog_timer.dml - Watchdog Timer Device Implementation
+
+dml 1.4;
+
+param desc = "ARM SP805 Watchdog Timer";
+device watchdog_timer;
+
+
+param documentation = "ARM SP805 Watchdog Timer implementation with memory-mapped registers for system health monitoring and timeout generation.";
+
+import "utility.dml";
+
+// Connect definitions for interfaces
+connect wclk_en is (signal_connect) {
+    param documentation = "Clock enable signal";
+}
+
+connect wrst_n is (signal_connect) {
+    param documentation = "Reset input signal (active low)";
+}
+
+connect wdogint is (signal_connect) {
+    param documentation = "Interrupt output signal";
+}
+
+connect wdogres is (signal_connect) {
+    param documentation = "Reset output signal";
+}
+
+// Register bank
+bank regs {
+    param register_size = 4;
+    param byte_order = "little-endian";
+    
+    // WDOGLOAD - Load register
+    register wdogload @ 0x0000 is (read, write) {
+        param init_val = 0x00000000;
+        param documentation = "Stores the reload value for the timer";
+    }
+    
+    // WDOGVALUE - Current value register
+    register wdogvalue @ 0x0004 is (read_only) {
+        param init_val = 0x00000000;
+        param documentation = "Contains the current countdown value";
+    }
+    
+    // WDOGCONTROL - Control register
+    register wdogcontrol @ 0x0008 is (read, write) {
+        param init_val = 0x00000000;
+        param documentation = "Controls timer operation including interrupt and reset enable bits";
+    }
+    
+    // WDOGINTCLR - Interrupt clear register
+    register wdogintclr @ 0x000C is (write_only) {
+        param documentation = "Clears the interrupt when written";
+    }
+    
+    // WDOGRIS - Raw interrupt status register
+    register wdogris @ 0x0010 is (read_only) {
+        param init_val = 0x00000000;
+        param documentation = "Shows raw interrupt status";
+    }
+    
+    // WDOGMIS - Masked interrupt status register
+    register wdogmis @ 0x0014 is (read_only) {
+        param init_val = 0x00000000;
+        param documentation = "Shows masked interrupt status";
+    }
+    
+    // WDOGLOCK - Lock register
+    register wdoglock @ 0x0C00 is (read, write) {
+        param init_val = 0x00000001;
+        param documentation = "Controls write access to other registers";
+        
+        method read() -> (uint64) {
+            return get();
+        }
+        
+        method write(uint64 value) {
+            if (value == 0x1ACCE551) {
+                // Unlock sequence
+                set(0x00000000);
+            } else {
+                // Any other value locks the registers
+                set(0x00000001);
+            }
+        }
+    }
+    
+    // WDOGITCR - Integration test control register
+    register wdogitcr @ 0x0F00 is (read, write) {
+        param init_val = 0x00000000;
+        param documentation = "Controls integration test mode";
+    }
+    
+    // WDOGITOP - Integration test output register
+    register wdogitop @ 0x0F04 is (write_only) {
+        param documentation = "Sets interrupt and reset outputs in test mode";
+    }
+    
+    // Identification registers
+    register wdogperiphid0 @ 0x0FE0 is (read_constant) {
+        param read_val = 0x00000024;
+        param documentation = "Peripheral identification register 0";
+    }
+    
+    register wdogperiphid1 @ 0x0FE4 is (read_constant) {
+        param read_val = 0x000000B8;
+        param documentation = "Peripheral identification register 1";
+    }
+    
+    register wdogperiphid2 @ 0x0FE8 is (read_constant) {
+        param read_val = 0x00000018;
+        param documentation = "Peripheral identification register 2";
+    }
+    
+    register wdogperiphid3 @ 0x0FEC is (read_constant) {
+        param read_val = 0x00000000;
+        param documentation = "Peripheral identification register 3";
+    }
+    
+    register wdogpcellid0 @ 0x0FF0 is (read_constant) {
+        param read_val = 0x0000000D;
+        param documentation = "PrimeCell identification register 0";
+    }
+    
+    register wdogpcellid1 @ 0x0FF4 is (read_constant) {
+        param read_val = 0x000000F0;
+        param documentation = "PrimeCell identification register 1";
+    }
+    
+    register wdogpcellid2 @ 0x0FF8 is (read_constant) {
+        param read_val = 0x00000005;
+        param documentation = "PrimeCell identification register 2";
+    }
+    
+    register wdogpcellid3 @ 0x0FFC is (read_constant) {
+        param read_val = 0x000000B1;
+        param documentation = "PrimeCell identification register 3";
+    }
+}

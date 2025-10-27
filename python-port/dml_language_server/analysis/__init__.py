@@ -22,7 +22,7 @@ from ..file_management import FileManager
 from ..span import ZeroSpan, ZeroPosition, ZeroRange, SpanBuilder
 from ..lsp_data import DMLDiagnostic, DMLDiagnosticSeverity, DMLLocation, DMLSymbol, DMLSymbolKind
 from .types import DMLError, DMLErrorKind, ReferenceKind, SymbolReference, NodeRef
-from .parsing.enhanced_parser import EnhancedDMLParser, TemplateDeclaration, DeviceDeclaration
+from .parsing.enhanced_parser import EnhancedDMLParser, TemplateDeclaration, DeviceDeclaration, DMLVersionDeclaration
 from .parsing.template_system import TemplateSystem
 
 logger = logging.getLogger(__name__)
@@ -232,6 +232,9 @@ class IsolatedAnalysis:
                 # Initialize template system with global scope
                 self.template_system.initialize_template_scope(self.root_scope)
                 
+                # Validate file structure (DML language rules)
+                self._validate_file_structure()
+                
                 # Process AST declarations
                 self._process_ast_declarations()
                 
@@ -274,6 +277,44 @@ class IsolatedAnalysis:
                 span=ZeroSpan(str(self.file_path), ZeroRange(ZeroPosition(0, 0), ZeroPosition(0, 0)))
             )
             self.errors.append(error)
+    
+    def _validate_file_structure(self) -> None:
+        """Validate DML file structure according to language rules."""
+        if not self.ast_declarations:
+            return
+        
+        # Track what we've seen
+        seen_dml_version = False
+        seen_device = False
+        declaration_index = 0
+        
+        for i, declaration in enumerate(self.ast_declarations):
+            # Check DML version position (must be first)
+            if isinstance(declaration, DMLVersionDeclaration):
+                if i != 0:
+                    error = DMLError(
+                        kind=DMLErrorKind.SEMANTIC_ERROR,
+                        message="Version declaration must be first statement in file",
+                        span=declaration.span
+                    )
+                    self.errors.append(error)
+                seen_dml_version = True
+                declaration_index = i
+            
+            # Check device position (must be second, right after dml version)
+            elif isinstance(declaration, DeviceDeclaration):
+                if seen_dml_version and i != 1:
+                    error = DMLError(
+                        kind=DMLErrorKind.SEMANTIC_ERROR,
+                        message="Device declaration must be second statement in file",
+                        span=declaration.span
+                    )
+                    self.errors.append(error)
+                seen_device = True
+                declaration_index = i
+            
+            # Other top-level declarations should come after device
+            # (This is enforced by the parser structure)
     
     def _process_ast_declarations(self) -> None:
         """Process AST declarations for template resolution and symbol extraction."""
