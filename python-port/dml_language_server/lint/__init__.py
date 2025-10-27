@@ -8,36 +8,19 @@ SPDX-License-Identifier: Apache-2.0 and MIT
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional
-from dataclasses import dataclass
-from enum import Enum
 
 from ..config import Config, LintConfig
-from ..analysis import IsolatedAnalysis, DMLError, DMLErrorKind
-from ..lsp_data import DMLDiagnosticSeverity
-from ..span import ZeroSpan, ZeroPosition, ZeroRange
+from ..analysis import IsolatedAnalysis, DMLError
+from .rules import (
+    LintRule,
+    LintRuleLevel,
+    get_default_rules,
+    TrailingWhitespaceRule,
+    LongLinesRule,
+    IndentationRule,
+)
 
 logger = logging.getLogger(__name__)
-
-
-class LintRuleLevel(Enum):
-    """Severity levels for lint rules."""
-    ERROR = "error"
-    WARNING = "warning"
-    INFO = "info"
-    HINT = "hint"
-
-
-@dataclass
-class LintRule:
-    """Base class for lint rules."""
-    name: str
-    description: str
-    level: LintRuleLevel = LintRuleLevel.WARNING
-    enabled: bool = True
-    
-    def check(self, file_path: Path, content: str, analysis: IsolatedAnalysis) -> List[DMLError]:
-        """Check the rule against a file."""
-        raise NotImplementedError
 
 
 class IndentationRule(LintRule):
@@ -225,11 +208,7 @@ class LintEngine:
     
     def _register_default_rules(self) -> None:
         """Register default lint rules."""
-        self.rules = [
-            IndentationRule(),
-            SpacingRule(),
-            NamingConventionRule(),
-        ]
+        self.rules = get_default_rules()
     
     def _apply_config(self) -> None:
         """Apply lint configuration."""
@@ -264,14 +243,13 @@ class LintEngine:
         if hasattr(rule, 'expected_indent') and 'indent_size' in rule_config:
             rule.expected_indent = int(rule_config['indent_size'])
     
-    def lint_file(self, file_path: Path, content: str, analysis: IsolatedAnalysis) -> List[DMLError]:
+    def lint_file(self, file_path: Path, content: str) -> List[DMLError]:
         """
         Lint a file and return found issues.
         
         Args:
             file_path: Path to the file
             content: File content
-            analysis: Analysis results for the file
             
         Returns:
             List of lint errors/warnings
@@ -283,7 +261,7 @@ class LintEngine:
                 continue
             
             try:
-                rule_errors = rule.check(file_path, content, analysis)
+                rule_errors = rule.check(file_path, content)
                 all_errors.extend(rule_errors)
             except Exception as e:
                 logger.error(f"Error running lint rule {rule.name} on {file_path}: {e}")

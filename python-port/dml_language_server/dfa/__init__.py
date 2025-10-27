@@ -108,6 +108,8 @@ class DMLAnalyzer:
         if AnalysisType.SYNTAX in analysis_types or AnalysisType.SEMANTIC in analysis_types:
             try:
                 from ..analysis.types import DMLErrorKind
+                from ..lint import LintEngine
+                
                 file_errors = self.analysis_engine.analyze_file(file_path, content)
                 # Filter out import errors if no compile commands are provided
                 # (matching Rust DFA behavior which doesn't report import errors)
@@ -116,6 +118,12 @@ class DMLAnalyzer:
                     file_errors = [e for e in file_errors if e.kind != DMLErrorKind.IMPORT_ERROR]
                 errors.extend(file_errors)
                 symbols = self.analysis_engine.get_all_symbols_in_file(file_path)
+                
+                # Run linting if enabled
+                lint_engine = LintEngine(self.config)
+                lint_errors = lint_engine.lint_file(file_path, content)
+                errors.extend(lint_errors)
+                
             except Exception as e:
                 logger.error(f"Analysis failed for {file_path}: {e}")
         
