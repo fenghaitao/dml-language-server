@@ -24,6 +24,7 @@ from ..lsp_data import DMLDiagnostic, DMLDiagnosticSeverity, DMLLocation, DMLSym
 from .types import DMLError, DMLErrorKind, ReferenceKind, SymbolReference, NodeRef
 from .parsing.enhanced_parser import EnhancedDMLParser, TemplateDeclaration, DeviceDeclaration, DMLVersionDeclaration
 from .parsing.template_system import TemplateSystem
+from .parsing.syntax_validator import SyntaxValidator
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,7 @@ class IsolatedAnalysis:
         # Enhanced parsing components
         self.enhanced_parser: Optional[EnhancedDMLParser] = None
         self.template_system = TemplateSystem()
+        self.syntax_validator = SyntaxValidator()
         self.ast_declarations: List = []
         
         # Parse the file
@@ -267,6 +269,17 @@ class IsolatedAnalysis:
                     self.symbol_definitions[symbol.name] = SymbolDefinition(symbol=symbol)
                     # Also add to scope
                     self.root_scope.add_symbol(symbol)
+            
+            # Run syntax validation
+            file_span = ZeroSpan(str(self.file_path), ZeroRange(ZeroPosition(0, 0), ZeroPosition(0, 0)))
+            validation_errors = self.syntax_validator.validate_file(
+                self.symbols, 
+                self.dml_version, 
+                file_span
+            )
+            self.errors.extend(validation_errors)
+            
+            logger.debug(f"Validation found {len(validation_errors)} additional errors/warnings")
                     
         except Exception as e:
             logger.error(f"Failed to parse {self.file_path}: {e}")
@@ -355,14 +368,94 @@ class IsolatedAnalysis:
     
     def get_symbol_at_position(self, position: ZeroPosition) -> Optional[DMLSymbol]:
         """Get the symbol at the given position."""
+        # First check in scope hierarchy
+        scope = self.root_scope.find_scope_at_position(position)
+        if scope:
+            # Find the most specific symbol at this position
+            for symbol_def in scope.get_all_symbols(include_children=False):
+                if symbol_def.symbol.location.span.contains_position(position):
+                    return symbol_def.symbol
+        
+        # Fallback to linear search
         for symbol in self.symbols:
             if symbol.location.span.contains_position(position):
                 return symbol
         return None
     
     def find_symbol(self, name: str) -> Optional[SymbolDefinition]:
-        """Find a symbol by name."""
+        """Find a symbol by name (simple name or qualified name)."""
+        # Handle qualified names (e.g., "device.bank.register")
+        if '.' in name:
+            return self._resolve_qualified_name(name)
+        
         return self.symbol_definitions.get(name)
+    
+    def _resolve_qualified_name(self, qualified_name: str) -> Optional[SymbolDefinition]:
+        """Resolve a qualified name like 'device.bank.register'."""
+        parts = qualified_name.split('.')
+        
+        # Start with the root name
+        current_def = self.symbol_definitions.get(parts[0])
+        if not current_def:
+            return None
+        
+        # Navigate through the hierarchy
+        for part in parts[1:]:
+            # Look in children
+            found = False
+            for child in current_def.symbol.children:
+                if child.name == part:
+                    current_def = SymbolDefinition(symbol=child)
+                    found = True
+                    break
+            
+            if not found:
+                return None
+        
+        return current_def
+    
+    def find_symbols_by_kind(self, kind: DMLSymbolKind) -> List[SymbolDefinition]:
+        """Find all symbols of a specific kind."""
+        result = []
+        for symbol_def in self.symbol_definitions.values():
+            if symbol_def.symbol.kind == kind:
+                result.append(symbol_def)
+            # Also check children recursively
+            result.extend(self._find_symbols_by_kind_recursive(symbol_def.symbol, kind))
+        return result
+    
+    def _find_symbols_by_kind_recursive(self, symbol: DMLSymbol, kind: DMLSymbolKind) -> List[SymbolDefinition]:
+        """Recursively find symbols of a specific kind."""
+        result = []
+        for child in symbol.children:
+            if child.kind == kind:
+                result.append(SymbolDefinition(symbol=child))
+            result.extend(self._find_symbols_by_kind_recursive(child, kind))
+        return result
+    
+    def get_symbol_hierarchy(self, symbol: DMLSymbol) -> List[str]:
+        """Get the full hierarchy path for a symbol."""
+        # Build path from root to this symbol
+        def find_path(current: DMLSymbol, target: DMLSymbol, path: List[str]) -> Optional[List[str]]:
+            if current.name == target.name and current.kind == target.kind:
+                return path + [current.name]
+            
+            for child in current.children:
+                result = find_path(child, target, path + [current.name])
+                if result:
+                    return result
+            return None
+        
+        # Search from root symbols
+        for root_symbol in self.symbols:
+            if root_symbol.name == symbol.name and root_symbol.kind == symbol.kind:
+                return [root_symbol.name]
+            
+            path = find_path(root_symbol, symbol, [])
+            if path:
+                return path
+        
+        return [symbol.name]
     
     def get_diagnostics(self) -> List[DMLDiagnostic]:
         """Get all diagnostics for this file."""

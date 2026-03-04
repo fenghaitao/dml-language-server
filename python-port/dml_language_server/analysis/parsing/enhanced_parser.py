@@ -1843,23 +1843,28 @@ class EnhancedDMLParser:
             size = self._parse_expression()
             self._consume(DMLTokenType.RIGHT_BRACKET, "Expected ']' after field size")
         
-        self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' after field name")
-        
-        # Parse field body
+        # Field can have a body or just end with semicolon
         parameters = []
         methods = []
         
-        while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
-            if self._match(DMLTokenType.PARAMETER):
-                parameters.append(self._parse_parameter())
-            elif self._match(DMLTokenType.METHOD):
-                methods.append(self._parse_method())
-            else:
-                self._advance()  # Skip unknown tokens
+        if self._match(DMLTokenType.SEMICOLON):
+            # Simple field declaration without body
+            end_span = self._previous_token().span
+        else:
+            self._consume(DMLTokenType.LEFT_BRACE, "Expected '{' or ';' after field name")
+            
+            # Parse field body
+            while not self._check(DMLTokenType.RIGHT_BRACE) and not self._is_at_end():
+                if self._match(DMLTokenType.PARAMETER):
+                    parameters.append(self._parse_parameter())
+                elif self._match(DMLTokenType.METHOD):
+                    methods.append(self._parse_method())
+                else:
+                    self._advance()  # Skip unknown tokens
+            
+            self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after field body")
+            end_span = self._previous_token().span
         
-        self._consume(DMLTokenType.RIGHT_BRACE, "Expected '}' after field body")
-        
-        end_span = self._previous_token().span
         combined_span = ZeroSpan(start_span.file_path, ZeroRange(start_span.range.start, end_span.range.end))
         
         return FieldDeclaration(combined_span, name_token.value, size, parameters, methods)
@@ -1880,7 +1885,14 @@ class EnhancedDMLParser:
         
         # Parse @ offset syntax
         if self._match(DMLTokenType.AT):
-            offset = self._parse_expression()
+            # Check for missing expression
+            if self._check(DMLTokenType.LEFT_BRACE) or self._check(DMLTokenType.SEMICOLON) or self._is_at_end():
+                self._error("Expected address expression after '@'")
+                offset = None
+            else:
+                offset = self._parse_expression()
+                if offset is None:
+                    self._error("Expected valid address expression after '@'")
         
         # Parse optional template applications: is (template1, template2)
         if self._match(DMLTokenType.IS):

@@ -54,6 +54,7 @@ class TokenType(Enum):
     COLON = ":"
     COMMA = ","
     DOT = "."
+    AT = "@"
     LBRACE = "{"
     RBRACE = "}"
     LPAREN = "("
@@ -81,7 +82,7 @@ class Token:
 
 
 class DMLLexer:
-    """Lexical analyzer for DML code."""
+    """Lexical analyzer for DML code with enhanced error recovery."""
     
     # Keywords mapping
     KEYWORDS = {
@@ -114,17 +115,28 @@ class DMLLexer:
         self.column = 0
         self.span_builder = SpanBuilder(file_path)
         self.span_builder.set_content(content)
+        self.errors: List[DMLError] = []
+        self._in_error_recovery = False
         
     def tokenize(self) -> List[Token]:
-        """Tokenize the content into a list of tokens."""
+        """Tokenize the content into a list of tokens with error recovery."""
         tokens = []
         
         while self.position < len(self.content):
-            token = self._next_token()
-            if token:
-                # Skip whitespace and comments for now
-                if token.type not in (TokenType.WHITESPACE, TokenType.COMMENT):
-                    tokens.append(token)
+            try:
+                token = self._next_token()
+                if token:
+                    # Skip whitespace and comments for now
+                    if token.type not in (TokenType.WHITESPACE, TokenType.COMMENT):
+                        tokens.append(token)
+                self._in_error_recovery = False
+            except Exception as e:
+                # Error recovery: skip to next token boundary
+                if not self._in_error_recovery:
+                    self._report_error(f"Lexical error: {e}", 
+                                     ZeroPosition(self.line, self.column))
+                    self._in_error_recovery = True
+                self._advance()
         
         # Add EOF token
         eof_pos = ZeroPosition(self.line, self.column)
@@ -132,6 +144,21 @@ class DMLLexer:
         tokens.append(Token(TokenType.EOF, "", eof_span))
         
         return tokens
+    
+    def _report_error(self, message: str, pos: ZeroPosition) -> None:
+        """Report a lexical error."""
+        span = ZeroSpan(self.file_path, ZeroRange(pos, pos))
+        error = DMLError(
+            kind=DMLErrorKind.SYNTAX_ERROR,
+            message=message,
+            span=span
+        )
+        self.errors.append(error)
+        logger.warning(f"Lexical error at {pos}: {message}")
+    
+    def get_errors(self) -> List[DMLError]:
+        """Get all lexical errors."""
+        return self.errors
     
     def _next_token(self) -> Optional[Token]:
         """Get the next token from the input."""
@@ -167,6 +194,7 @@ class DMLLexer:
             ':': TokenType.COLON,
             ',': TokenType.COMMA,
             '.': TokenType.DOT,
+            '@': TokenType.AT,
             '{': TokenType.LBRACE,
             '}': TokenType.RBRACE,
             '(': TokenType.LPAREN,
@@ -239,7 +267,7 @@ class DMLLexer:
         return Token(TokenType.COMMENT, value, span)
     
     def _read_block_comment(self) -> Token:
-        """Read a block comment."""
+        """Read a block comment with unterminated check."""
         start_pos = ZeroPosition(self.line, self.column)
         value = ""
         
@@ -249,58 +277,123 @@ class DMLLexer:
         value += self._current_char()
         self._advance()
         
+        terminated = False
         while self.position < len(self.content):
             if self._current_char() == '*' and self._peek_char() == '/':
                 value += self._current_char()
                 self._advance()
                 value += self._current_char()
                 self._advance()
+                terminated = True
                 break
             value += self._current_char()
             self._advance()
+        
+        if not terminated:
+            self._report_error("Unterminated block comment (missing */)", start_pos)
         
         end_pos = ZeroPosition(self.line, self.column)
         span = ZeroSpan(self.file_path, ZeroRange(start_pos, end_pos))
         return Token(TokenType.COMMENT, value, span)
     
     def _read_string(self) -> Token:
-        """Read a string literal."""
+        """Read a string literal with error recovery."""
         start_pos = ZeroPosition(self.line, self.column)
+        start_line = self.line
         value = ""
         
         # Skip opening quote
         value += self._current_char()
         self._advance()
         
+        unterminated = False
         while self.position < len(self.content) and self._current_char() != '"':
+            # Check for unterminated string on new line
+            if self._current_char() == '\n':
+                unterminated = True
+                break
+                
             if self._current_char() == '\\':
                 value += self._current_char()
                 self._advance()
                 if self.position < len(self.content):
-                    value += self._current_char()
+                    # Validate escape sequence
+                    escape_char = self._current_char()
+                    if escape_char not in 'nrt\\"\'':
+                        self._report_error(f"Invalid escape sequence: \\{escape_char}", 
+                                         ZeroPosition(self.line, self.column))
+                    value += escape_char
                     self._advance()
             else:
                 value += self._current_char()
                 self._advance()
         
-        # Skip closing quote
-        if self.position < len(self.content):
+        # Skip closing quote if present
+        if self.position < len(self.content) and self._current_char() == '"':
             value += self._current_char()
             self._advance()
+        elif unterminated:
+            self._report_error("Unterminated string literal (cannot span multiple lines)", start_pos)
+        else:
+            self._report_error("Unterminated string literal (missing closing quote)", start_pos)
         
         end_pos = ZeroPosition(self.line, self.column)
         span = ZeroSpan(self.file_path, ZeroRange(start_pos, end_pos))
         return Token(TokenType.STRING, value, span)
     
     def _read_number(self) -> Token:
-        """Read a number literal."""
+        """Read a number literal with validation."""
         start_pos = ZeroPosition(self.line, self.column)
         value = ""
+        has_hex = False
+        has_decimal = False
         
-        while (self.position < len(self.content) and 
-               (self._current_char().isdigit() or self._current_char() in '.xX')):
+        # Check for hex prefix
+        if self._current_char() == '0' and self._peek_char() in 'xX':
+            has_hex = True
             value += self._current_char()
             self._advance()
+            value += self._current_char()
+            self._advance()
+            
+            # Read hex digits
+            if not self._current_char().isdigit() and self._current_char().lower() not in 'abcdef':
+                self._report_error("Invalid hexadecimal number: expected hex digit after 0x", start_pos)
+            
+            while (self.position < len(self.content) and 
+                   (self._current_char().isdigit() or self._current_char().lower() in 'abcdef')):
+                value += self._current_char()
+                self._advance()
+        else:
+            # Read decimal number
+            while (self.position < len(self.content) and 
+                   (self._current_char().isdigit() or self._current_char() == '.')):
+                if self._current_char() == '.':
+                    if has_decimal:
+                        self._report_error("Invalid number: multiple decimal points", start_pos)
+                        break
+                    has_decimal = True
+                value += self._current_char()
+                self._advance()
+            
+            # Check for scientific notation
+            if self.position < len(self.content) and self._current_char() in 'eE':
+                value += self._current_char()
+                self._advance()
+                if self.position < len(self.content) and self._current_char() in '+-':
+                    value += self._current_char()
+                    self._advance()
+                while (self.position < len(self.content) and self._current_char().isdigit()):
+                    value += self._current_char()
+                    self._advance()
+        
+        # Check for invalid suffix
+        if self.position < len(self.content) and self._current_char().isalpha():
+            suffix_start = self.position
+            while (self.position < len(self.content) and self._current_char().isalnum()):
+                value += self._current_char()
+                self._advance()
+            self._report_error(f"Invalid number suffix in '{value}'", start_pos)
         
         end_pos = ZeroPosition(self.line, self.column)
         span = ZeroSpan(self.file_path, ZeroRange(start_pos, end_pos))
@@ -325,7 +418,14 @@ class DMLLexer:
 
 
 class DMLParser:
-    """Parser for DML code."""
+    """Parser for DML code with enhanced error recovery."""
+    
+    # Synchronization tokens for error recovery
+    SYNC_TOKENS = {
+        TokenType.DEVICE, TokenType.TEMPLATE, TokenType.IMPORT,
+        TokenType.TYPEDEF, TokenType.STRUCT, TokenType.SEMICOLON,
+        TokenType.RBRACE, TokenType.EOF
+    }
     
     def __init__(self, content: str, file_path: str):
         self.content = content
@@ -337,22 +437,79 @@ class DMLParser:
         self.symbols: List[DMLSymbol] = []
         self.imports: List[str] = []
         self.dml_version: Optional[str] = None
+        self._in_panic_mode = False
+        self._error_count = 0
+        self._max_errors = 100  # Stop parsing after too many errors
+        
+        # Collect lexer errors
+        self.errors.extend(self.lexer.get_errors())
         
         # Parse the content
         self._parse()
     
     def _parse(self) -> None:
-        """Parse the token stream."""
+        """Parse the token stream with error recovery."""
         try:
-            while not self._is_at_end():
-                self._parse_top_level()
+            while not self._is_at_end() and self._error_count < self._max_errors:
+                try:
+                    self._parse_top_level()
+                    self._in_panic_mode = False
+                except Exception as e:
+                    if not self._in_panic_mode:
+                        self._report_error(f"Parse error: {e}")
+                        self._in_panic_mode = True
+                    self._synchronize()
         except Exception as e:
-            error = DMLError(
-                kind=DMLErrorKind.SYNTAX_ERROR,
-                message=f"Parse error: {e}",
-                span=self._current_token_span()
-            )
-            self.errors.append(error)
+            # Fatal error, stop parsing
+            self._report_error(f"Fatal parse error: {e}")
+            logger.error(f"Fatal parse error in {self.file_path}: {e}")
+    
+    def _synchronize(self) -> None:
+        """Synchronize parser after error by skipping to next safe point."""
+        self._advance()
+        
+        while not self._is_at_end():
+            # Look for synchronization points
+            current = self._current_token()
+            
+            if current.type in self.SYNC_TOKENS:
+                self._in_panic_mode = False
+                return
+            
+            # Also sync on new declarations that might start on next line
+            if self._previous_token().type == TokenType.SEMICOLON:
+                self._in_panic_mode = False
+                return
+            
+            self._advance()
+    
+    def _report_error(self, message: str, span: Optional[ZeroSpan] = None) -> None:
+        """Report a parse error with context."""
+        if span is None:
+            span = self._current_token_span()
+        
+        # Add context from surrounding tokens
+        context_tokens = []
+        start_idx = max(0, self.position - 2)
+        end_idx = min(len(self.tokens), self.position + 3)
+        
+        for i in range(start_idx, end_idx):
+            if i < len(self.tokens):
+                token = self.tokens[i]
+                marker = " -> " if i == self.position else "    "
+                context_tokens.append(f"{marker}{token.type.value}: '{token.value}'")
+        
+        context_str = "\n".join(context_tokens) if context_tokens else ""
+        detailed_message = f"{message}\nContext:\n{context_str}" if context_str else message
+        
+        error = DMLError(
+            kind=DMLErrorKind.SYNTAX_ERROR,
+            message=detailed_message,
+            span=span
+        )
+        self.errors.append(error)
+        self._error_count += 1
+        logger.debug(f"Parse error at {span.range.start}: {message}")
     
     def _parse_top_level(self) -> None:
         """Parse a top-level declaration."""
@@ -522,6 +679,15 @@ class DMLParser:
             name_span = self._current_token().span
             self._advance()
             
+            # Skip optional @ address syntax
+            if self._current_token().type == TokenType.AT:
+                self._advance()  # Skip @
+                # Check for missing address
+                if self._current_token().type in (TokenType.LBRACE, TokenType.RBRACE, TokenType.EOF, TokenType.COMMENT):
+                    self._report_error("Expected address expression after '@'")
+                elif self._current_token().type in (TokenType.NUMBER, TokenType.IDENTIFIER):
+                    self._advance()  # Skip the address
+            
             location = DMLLocation(name_span)
             symbol = DMLSymbol(
                 name=name,
@@ -543,6 +709,17 @@ class DMLParser:
             name = self._current_token().value
             name_span = self._current_token().span
             self._advance()
+            
+            # Skip optional @ [bits] syntax
+            if self._current_token().type == TokenType.AT:
+                self._advance()  # Skip @
+                if self._current_token().type == TokenType.LBRACKET:
+                    self._advance()  # Skip [
+                    # Skip until ]
+                    while not self._is_at_end() and self._current_token().type != TokenType.RBRACKET:
+                        self._advance()
+                    if self._current_token().type == TokenType.RBRACKET:
+                        self._advance()  # Skip ]
             
             location = DMLLocation(name_span)
             symbol = DMLSymbol(
@@ -629,6 +806,19 @@ class DMLParser:
             return self.tokens[-1]  # EOF token
         return self.tokens[self.position]
     
+    def _previous_token(self) -> Token:
+        """Get the previous token."""
+        if self.position > 0 and self.position - 1 < len(self.tokens):
+            return self.tokens[self.position - 1]
+        return self.tokens[0] if self.tokens else self._current_token()
+    
+    def _peek_token(self, offset: int = 1) -> Token:
+        """Peek at a token ahead of current position."""
+        peek_pos = self.position + offset
+        if peek_pos >= len(self.tokens):
+            return self.tokens[-1]  # EOF token
+        return self.tokens[peek_pos]
+    
     def _current_token_span(self) -> ZeroSpan:
         """Get the span of the current token."""
         return self._current_token().span
@@ -643,6 +833,19 @@ class DMLParser:
         """Check if we're at the end of tokens."""
         return (self.position >= len(self.tokens) or 
                 self._current_token().type == TokenType.EOF)
+    
+    def _check(self, *token_types: TokenType) -> bool:
+        """Check if current token matches any of the given types."""
+        if self._is_at_end():
+            return False
+        return self._current_token().type in token_types
+    
+    def _match(self, *token_types: TokenType) -> bool:
+        """Check and consume if current token matches any of the given types."""
+        if self._check(*token_types):
+            self._advance()
+            return True
+        return False
     
     def _expect(self, expected_type: TokenType) -> Token:
         """Expect a specific token type."""

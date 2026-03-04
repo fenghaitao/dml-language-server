@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0 and MIT
 """
 
 from typing import Generic, TypeVar, NamedTuple, Optional
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 # Type parameter for indexing system
@@ -40,22 +40,18 @@ class Position(Generic[IndexType]):
             raise ValueError(f"Invalid position: line={self.line}, column={self.column}")
     
     def to_zero_indexed(self) -> 'Position[ZeroIndexed]':
-        """Convert to zero-indexed position."""
-        if isinstance(self, Position[OneIndexed]):
-            return Position[ZeroIndexed](
-                line=max(0, self.line - 1),
-                column=max(0, self.column - 1)
-            )
-        return self
+        """Convert to zero-indexed position (assumes input is one-indexed)."""
+        return Position[ZeroIndexed](
+            line=max(0, self.line - 1),
+            column=max(0, self.column - 1)
+        )
     
     def to_one_indexed(self) -> 'Position[OneIndexed]':
-        """Convert to one-indexed position."""
-        if isinstance(self, Position[ZeroIndexed]):
-            return Position[OneIndexed](
-                line=self.line + 1,
-                column=self.column + 1
-            )
-        return self
+        """Convert to one-indexed position (assumes input is zero-indexed)."""
+        return Position[OneIndexed](
+            line=self.line + 1,
+            column=self.column + 1
+        )
     
     def __str__(self) -> str:
         return f"{self.line}:{self.column}"
