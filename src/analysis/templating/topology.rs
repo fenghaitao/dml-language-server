@@ -15,8 +15,7 @@ use lsp_types::DiagnosticSeverity;
 
 use crate::analysis::DeclarationSpan;
 use crate::analysis::parsing::tree::ZeroSpan;
-use crate::analysis::structure::objects::{Import, InEach, Template,
-                                          Instantiation, CompositeObject};
+use crate::analysis::structure::objects::{CompObjectKindDecl, CompositeObject, Import, InEach, Instantiation, Template};
 use crate::analysis::structure::toplevel::{ExistCondition, ObjectDecl,
                                            StatementSpecStatement,
                                            StatementSpec, TopLevel};
@@ -215,6 +214,7 @@ pub fn create_templates_traits<'t>(
 #[derive(PartialEq, Debug, Clone, Hash, Eq)]
 pub enum InferiorVariant<'t> {
     Is(&'t ObjectDecl<Instantiation>),
+    ImplicitIs(&'t CompObjectKindDecl),
     Object(&'t ObjectDecl<CompositeObject>),
     InEach(&'t ObjectDecl<InEach>),
     Import(&'t ObjectDecl<Import>),
@@ -226,6 +226,7 @@ impl <'t> InferiorVariant<'t> {
     pub fn span(&self) -> &'t ZeroSpan {
         match self {
             InferiorVariant::Is(objdecl) => &objdecl.obj.span,
+            InferiorVariant::ImplicitIs(kinddecl) => &kinddecl.span,
             InferiorVariant::Object(objdecl) => &objdecl.obj.kind.span,
             InferiorVariant::InEach(objdecl) => &objdecl.obj.span,
             InferiorVariant::Import(objdecl) => &objdecl.obj.span,
@@ -269,6 +270,8 @@ pub fn dependencies<'t>(statements: &'t StatementSpec,
     }
     for objstmnt in &statements.objects {
         queue.push(InferiorVariant::Object(objstmnt));
+        queue.push(InferiorVariant::ImplicitIs(
+            &objstmnt.obj.kind));
     }
     for import in &statements.imports {
         queue.push(InferiorVariant::Import(import));
@@ -277,8 +280,6 @@ pub fn dependencies<'t>(statements: &'t StatementSpec,
     while let Some(decl) = queue.pop() {
         match decl {
             InferiorVariant::Object(obj) => {
-                inferior.insert(obj.obj.kind_name(),
-                                InferiorVariant::Object(obj));
                 queue.extend(obj.spec.objects.iter().map(
                     |o|InferiorVariant::Object(o)));
                 queue.extend(obj.spec.ineachs.iter().map(
@@ -301,10 +302,14 @@ pub fn dependencies<'t>(statements: &'t StatementSpec,
                     }
                 }
             },
+            InferiorVariant::ImplicitIs(kind) => {
+                inferior.insert(kind.kind_name(),
+                                InferiorVariant::ImplicitIs(kind));
+            },
             InferiorVariant::Import(imp) => {
                 let name = imp_map.get(&imp.obj)
                     .map_or_else(||imp.obj.imported_name(), |s|s.as_str());
-                debug!("Mapped {:?} to {:?}", imp.obj, name);
+                debug!("Mapped import {:?} to {:?}", imp.obj, name);
                 inferior.insert(name,
                                 InferiorVariant::Import(imp));
                 if imp.cond == ExistCondition::Always {
@@ -580,20 +585,89 @@ pub fn rank_templates_aux<'t>(mut templates: HashMap<&'t str,
                                 severity: Some(DiagnosticSeverity::ERROR),
                             });
                     },
-                    inf => {
+                    InferiorVariant::Is(inf) => {
                         if !BUILTIN_TEMPLATES.iter().any(
                             |name|name==missing_template_name) {
-                            report.push(
-                                DMLError {
-                                    span: *inf.span(),
-                                    description: format!(
-                                        "No template; '{}'",
-                                        missing_template_name),
-                                related: vec![],
-                                severity: Some(DiagnosticSeverity::ERROR),
-                                });
+                            // The 'is' may contain more names than we
+                            // are looking for, find the particular name
+                            // that matches and use that span
+                            // Because the same name could be used multiple
+                            // times, but this only causes inferior binding
+                            // report one error per such span
+
+                            let spans: Vec<_> = inf.obj.names.iter()
+                                .filter(|dmlname|
+                                        &dmlname.val == missing_template_name)
+                                .map(|dmlname|dmlname.span())
+                                .collect();
+                            if spans.is_empty() {
+                                internal_error!("Unexpectedly no name \
+                                                 matching missing template \
+                                                 in {:?} (wanted {})",
+                                                inf, missing_template_name);
+                                continue;
+                            }
+                            for span in spans {
+                                report.push(
+                                    DMLError {
+                                        span: *span,
+                                        description: format!(
+                                            "No template named '{}'",
+                                            missing_template_name),
+                                        related: vec![],
+                                        severity: Some(
+                                            DiagnosticSeverity::ERROR),
+                                    });
+                            }
                         }
-                    }
+                    },
+                    // All implicit inferior references are object templates, and thus do not
+                    // need to be reported
+                    InferiorVariant::ImplicitIs(_) => {
+                        debug!("Implicit import of '{}' missing and intentionally ignored",
+                               missing_template_name);
+                    },
+                    InferiorVariant::InEach(decl) => {
+                        if !BUILTIN_TEMPLATES.iter().any(
+                            |name|name==missing_template_name) {
+                            // The 'is' may contain more names than we
+                            // are looking for, find the particular name
+                            // that matches and use that span
+                            // Because the same name could be used multiple
+                            // times, but this only causes inferior binding
+                            // report one error per such span
+
+                            let spans: Vec<_> = decl.obj.spec.iter()
+                                .filter(|dmlname|
+                                        &dmlname.val == missing_template_name)
+                                .map(|dmlname|dmlname.span())
+                                .collect();
+                            if spans.is_empty() {
+                                internal_error!("Unexpectedly no name \
+                                                 matching missing template \
+                                                 in {:?} (wanted {})",
+                                                decl, missing_template_name);
+                                continue;
+                            }
+                            for span in spans {
+                                report.push(
+                                    DMLError {
+                                        span: *span,
+                                        description: format!(
+                                            "No template; '{}'",
+                                            missing_template_name),
+                                        related: vec![],
+                                        severity: Some(
+                                            DiagnosticSeverity::ERROR),
+                                    });
+                            }
+                        }
+                    },
+                    inf => {
+                        internal_error!(
+                            "Unexpected template dependency through {:?}",
+                            inf);
+                    },
                 }
                 debug!("Added dummy missing template {}",
                        missing_template_name);

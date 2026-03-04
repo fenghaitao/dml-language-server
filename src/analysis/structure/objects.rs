@@ -325,6 +325,7 @@ impl Import {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct InEach {
+    pub loc: ZeroSpan,
     pub span: ZeroSpan,
     pub spec: Vec<DMLString>,
     pub statements: Statements,
@@ -399,6 +400,10 @@ impl ToStructure<structure::InEachContent> for InEach {
         content.spec.references(&mut references, file);
         content.statements.references(&mut references, file);
         Some(InEach {
+            loc: ZeroSpan::from_range(
+                ZeroRange::combine(content.intok.range(),
+                                   content.each.range()),
+                file.path),
             span,
             spec,
             statements,
@@ -1014,9 +1019,15 @@ impl StructureSymbol for Method {
     }
 }
 
+impl MaybeAbstract for Method {
+    fn is_abstract(&self) -> bool {
+        matches!(self.body.as_ref(), StatementKind::Empty(_))
+    }
+}
+
 impl Scope for Method {
     fn create_context(&self) -> ContextKey {
-        ContextKey::Structure(SimpleSymbol::make(self, self.kind()))
+        ContextKey::Method(SimpleSymbol::make(self, self.kind()))
     }
     fn defined_symbols(&self) -> Vec<&dyn StructureSymbol> {
         let mut symbols = self.arguments.to_symbols();

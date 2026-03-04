@@ -4,7 +4,60 @@
 -->
 # Change Log
 
+## 0.9.18
+- Fixed a rare case where the DLS would crash when reporting device contexts
+- Fixed issue where the DLS may fail to parse files with unended cblock headers
+  or footers
+- The DLS will no longer fail to parse files with unicode characters in cblock
+  header or footers, or in multiline comments
+- The DLS will now report when an ambiguous default call is made
+- Improvements and clarifications to connections between symbols and references,
+  for details, see [USAGE.md](USAGE.md).
+-- Method declared in unrelated templates in an allowed way will now have their
+   references correctly resolved.
+-- Goto-reference on default calls will now go to the methods that may be called.
+-- Goto-implementations on templates will now go to all places where they are
+   instantiated.
+-- Goto-implementations on objects will now go to all the 'in each' declarations
+   which apply to that object.
+- Added parser support for provisional 'explicit\_method\_decls'
+- The DLS will now correctly report missing template names in 'in each' constructs
+- Fixed error where the DLS would fail to match references from within in a template
+  to symbols defined in parents of objects instantiating the template
+
+## 0.9.17
+- Fixed linter wrongly throwing an error on space after `defined` keyword
+- Fixed relative import resolution ("../" and "./")
+
+## 0.9.16
+- DLS will no longer incorrectly warn about the compile_commands not being under
+  a workspace root when it in fact is
+
+## 0.9.15
+- Added support for line length and breaking rules regarding line-breaks after opening parentheses, method output arguments, conditional expressions and binary operands.
+- Added support for indendation rule indent\_continuation\_line.
+- Optimizations in how the server resolves file paths, should reduce
+  time-to-ready for the server when first starting by about 50%, depending
+  on the complexity of the include tree.
+- Improved feedback to user when attempting to obtain symbol information on
+  a symbol inside an unused template.
+
 ## 0.9.14
+- Slight optimization to the memory usage of device-level analysis which
+  should improve runtimes and reduce the chance of the DLS running out
+  of memory on larger devices.
+- Optimizations to reference matching, which should greatly speed up semantic
+  analysis speed of larger devices.
+- Corrected range of error reporting of unknown templates
+- Fixed instances of the language server crashing when tracked files were
+  removed while it was running.
+- The DLS will now interrupt ongoing work when it would be redundant
+  (in some cases), resulting in performance improvements.
+- The DLS will now try to stop ongoing work when asked to shut down,
+  which should make it exit faster.
+- Adjusted error message in DFA when unable to open DLS binary
+- The DLS will now update the internal log-level when after a configuration
+  update
 
 ## 0.9.13
 - Corrected the name of "explicit\_param\_decls" provisional. Note that it still

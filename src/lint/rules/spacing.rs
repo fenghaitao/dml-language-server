@@ -1,3 +1,5 @@
+//  © 2024 Intel Corporation
+//  SPDX-License-Identifier: Apache-2.0 and MIT
 use itertools::izip;
 use std::convert::TryInto;
 use serde::{Deserialize, Serialize};
@@ -683,8 +685,17 @@ pub struct NspUnaryRule {
 pub type NspUnaryArgs = ZeroRange;
 
 impl NspUnaryArgs {
+    fn is_exception(node: &UnaryExpressionContent) -> bool {
+        // Defined keyword counts as UnaryOp for DLS, but we allow space after it
+        if let Some(token) = node.operation.get_token() {
+            return token.kind == TokenKind::Defined
+        }
+        false
+    }
+
     pub fn from_unary_expr(node: &UnaryExpressionContent)
                            -> Option<NspUnaryArgs> {
+        if Self::is_exception(node) { return None; }
         let mut gap = node.range();
         gap.col_start = node.operation.range().col_end;
         gap.col_end = node.expr.range().col_start;
@@ -859,7 +870,8 @@ impl NspPtrDeclRule {
         if !self.enabled { return; }
         if let Some(ranges) = ranges {
             if let Some(op_range) = ranges.rightmost_multiply {
-                if has_space_between(&op_range, &ranges.identifier_range) {
+                if has_space_between(&op_range, &ranges.identifier_range)
+                   && ranges.identifier_range != ZeroRange::invalid() {
                     acc.push(self.create_err(ranges.identifier_range));
                 }
             }

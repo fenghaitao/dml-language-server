@@ -16,8 +16,15 @@ use crate::analysis::parsing::parser::{doesnt_understand_tokens,
                                        FileParser, Parse, ParseContext,
                                        FileInfo};
 use crate::analysis::LocalDMLError;
-use crate::lint::rules::spacing::{NspFunparArgs, NspInparenArgs, SpBracesArgs, SpPunctArgs};
-use crate::lint::rules::indentation::{IndentCodeBlockArgs, IndentClosingBraceArgs, IndentParenExprArgs};
+use crate::lint::rules::linelength::{BreakFuncCallOpenParenArgs, BreakMethodOutputArgs};
+use crate::lint::rules::spacing::{SpBracesArgs,
+                                  NspInparenArgs,
+                                  NspFunparArgs,
+                                  SpPunctArgs};
+use crate::lint::rules::indentation::{IndentCodeBlockArgs,
+    IndentClosingBraceArgs,
+    IndentParenExprArgs,
+    IndentContinuationLineArgs};
 use crate::lint::{rules::CurrentRules, AuxParams, DMLStyleError};
 use crate::analysis::reference::{Reference, ReferenceKind};
 use crate::analysis::FileSpec;
@@ -90,6 +97,7 @@ pub struct MethodContent {
     pub returns: Option<ReturnContent>,
     pub throws: Option<LeafToken>,
     pub default: Option<LeafToken>,
+    pub colon: Option<LeafToken>,
     pub statements: Statement,
 }
 
@@ -232,11 +240,13 @@ impl TreeElement for MethodContent {
         }
         errors
     }
-    fn evaluate_rules(&self, acc: &mut Vec<DMLStyleError>, rules: &CurrentRules, _aux: AuxParams) {
+    fn evaluate_rules(&self, acc: &mut Vec<DMLStyleError>, rules: &CurrentRules, aux: AuxParams) {
         rules.nsp_funpar.check(NspFunparArgs::from_method(self), acc);
         rules.nsp_inparen.check(NspInparenArgs::from_method(self), acc);
         rules.sp_punct.check(SpPunctArgs::from_method(self), acc);
         rules.indent_paren_expr.check(IndentParenExprArgs::from_method(self), acc);
+        rules.break_func_call_open_paren.check(BreakFuncCallOpenParenArgs::from_method(self, aux.depth), acc);
+        rules.break_method_output.check(BreakMethodOutputArgs::from_method(self), acc);
     }
 }
 
@@ -318,12 +328,14 @@ fn parse_method(modifier: Option<LeafToken>,
     };
     let throws = pre_statements_context.next_if_kind(
         stream, TokenKind::Throws);
+    let colon = pre_statements_context.next_if_kind(
+        stream, TokenKind::Colon);
     let default = pre_statements_context.next_if_kind(
         stream, TokenKind::Default);
     let statements = Statement::parse(&outer, stream, file_info);
     DMLObjectContent::Method(MethodContent {
         modifier, independent, startup, memoized, method, name, lparen,
-        arguments, rparen, returns, throws, default, statements
+        arguments, rparen, returns, throws, colon, default, statements
     }).into()
 }
 
@@ -619,9 +631,10 @@ impl TreeElement for Instantiation {
                 |(tok,_)|tok).collect(),
         };
 
-        let refs = toks.into_iter().filter_map(
-            |tok|Reference::global_from_token(
-                tok, file, ReferenceKind::Template));
+        let refs = toks.into_iter()
+            .filter_map(|tok|Reference::global_from_token(
+                         tok, file, ReferenceKind::Template))
+            .map(|mut r|{r.extra_info.was_instantiation = true; r});
         accumulator.extend(refs);
     }
 }
@@ -1927,6 +1940,9 @@ impl TreeElement for DMLObjectContent {
             Self::Subdevice(content) => create_subs![content],
             Self::Template(content) => create_subs![content],
         }
+    }
+    fn evaluate_rules(&self, acc: &mut Vec<DMLStyleError>, rules: &CurrentRules, aux: AuxParams) {
+        rules.indent_continuation_line.check(acc, IndentContinuationLineArgs::from_dml_object_content(self, aux.depth));
     }
 }
 

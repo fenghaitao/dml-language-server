@@ -93,9 +93,9 @@ impl BlockingRequestAction for ShutdownRequest {
         _out: O,
     ) -> Result<Self::Response, ResponseError> {
         if let Ok(ctx) = ctx.inited() {
-            // wait for pending jobs before ack-ing
-            ctx.wait_for_concurrent_jobs();
             ctx.shut_down.store(true, Ordering::SeqCst);
+            ctx.stop_all_jobs();
+            ctx.wait_for_concurrent_jobs();
             Ok(Ack)
         } else {
             Err(ResponseError::Message(
@@ -270,14 +270,14 @@ impl BlockingRequestAction for InitializeRequest {
             });
         }
         if let ActionContext::Init(ref mut initctx) = ctx {
-            initctx.update_workspaces(workspaces, vec![]);
+            initctx.update_workspaces(workspaces, vec![], &out);
             let temp_resolver = initctx.construct_resolver();
             for file in IMPLICIT_IMPORTS {
                 debug!("Requesting analysis of builtin file {}", file);
                 if let Some(path) = temp_resolver
                     .resolve_under_any_context(Path::new(file)) {
                         let pathb: PathBuf = path.into();
-                        initctx.isolated_analyze(pathb.as_path(), None, &out);
+                        initctx.isolated_analyze(pathb.as_path(), None, None, &out);
                     }
             }
         } else {
@@ -330,7 +330,7 @@ impl<O: Output> LsService<O> {
             let output = client_reader_output;
             let send = client_reader_send;
             loop {
-                debug!("Awaiting message");
+                trace!("Awaiting message");
                 let msg_string = match msg_reader.read_message() {
                     Some(m) => m,
                     None => {
@@ -346,11 +346,11 @@ impl<O: Output> LsService<O> {
                 trace!("Read a message `{}`", msg_string);
                 match RawMessageOrResponse::try_parse(&msg_string) {
                     Ok(RawMessageOrResponse::Message(rm)) => {
-                        debug!("Parsed a message: {}", rm.method);
+                        trace!("Parsed a message: {}", rm.method);
                         send.send(ServerToHandle::ClientMessage(rm)).ok();
                     },
                     Ok(RawMessageOrResponse::Response(rr)) => {
-                        debug!("Parsed a response: {}", rr.id);
+                        trace!("Parsed a response: {}", rr.id);
                         send.send(ServerToHandle::ClientResponse(rr)).ok();
                     },
                     Err(e) => {
@@ -394,7 +394,7 @@ impl<O: Output> LsService<O> {
                 ServerToHandle::ExitCode(code) => return code,
                 ServerToHandle::IsolatedAnalysisDone(path, context,
                                                      requests) => {
-                    debug!("Received isolated analysis of {:?}", path);
+                    trace!("Received isolated analysis of {:?}", path);
                     if let ActionContext::Init(ctx) = &mut self.ctx {
                         // hack where we try to activate a device context
                         // as early as we possibly can, unless device context
@@ -422,11 +422,13 @@ impl<O: Output> LsService<O> {
                             // or error reporting will complain later
                             if let Some(file) = ctx.construct_resolver()
                                 .resolve_with_maybe_context(&file,
-                                                            context.as_ref()) {
+                                                            context.as_ref(),
+                                                            Some(&path)) {
                                     if !config.suppress_imports {
                                         trace!("Analysing imported file {}",
                                             file.to_str().unwrap());
                                         ctx.isolated_analyze(&file,
+                                                            Some(path.clone()),
                                                             context.clone(),
                                                             &self.output);
                                     }
@@ -443,25 +445,25 @@ impl<O: Output> LsService<O> {
                     }
                 },
                 ServerToHandle::DeviceAnalysisDone(path) => {
-                    debug!("Received device analysis of {:?}", path);
+                    trace!("Received device analysis of {:?}", path);
                     if let ActionContext::Init(ctx) = &mut self.ctx {
                         ctx.report_errors(&self.output);
                         ctx.check_state_waits();
                     }
                 },
                 ServerToHandle::LinterDone(path) => {
-                    debug!("Received linter analysis of {:?}", path);
+                    trace!("Received linter analysis of {:?}", path);
                     if let ActionContext::Init(ctx) = &mut self.ctx {
                         ctx.report_errors(&self.output);
                     }
                 },
-                ServerToHandle::AnalysisRequest(importpath, context) => {
+                ServerToHandle::AnalysisRequest(importpath, context, source) => {
                     if let ActionContext::Init(ctx) = &mut self.ctx {
                         if !ctx.config.lock().unwrap().to_owned().suppress_imports {
-                            debug!("Analysing imported file {}",
+                            trace!("Analysing imported file {}",
                                &importpath.to_str().unwrap());
                             ctx.isolated_analyze(
-                                &importpath, context, &self.output);
+                                &importpath, Some(source), context, &self.output);
                         }
                     }
                 }
@@ -477,14 +479,14 @@ impl<O: Output> LsService<O> {
                 blocking_requests: $($br_action: ty),*;
                 requests: $($request: ty),*;
             ) => {
-                debug!("Handling `{}`", $method);
+                trace!("Handling `{}`", $method);
 
                 match $method.as_str() {
                 $(
                     <$n_action as LSPNotification>::METHOD => {
                         let notification: Notification<$n_action> = msg.parse_as_notification()?;
                         if let Ok(mut ctx) = self.ctx.inited() {
-                            debug!("Notified: {}", $method);
+                            trace!("Notified: {}", $method);
                             if notification.dispatch(&mut ctx, self.output.clone()).is_err() {
                                 debug!("Error handling notification: {:?}", msg);
                             }
@@ -529,7 +531,7 @@ impl<O: Output> LsService<O> {
                     <$request as LSPRequest>::METHOD => {
                         let request: Request<$request> = msg.parse_as_request()?;
                         if let Ok(ctx) = self.ctx.inited() {
-                            debug!("Unblockingly Requested: {}", $method);
+                            trace!("Unblockingly Requested: {}", $method);
                             self.dispatcher.dispatch(request, ctx);
                         }
                         else {
@@ -601,7 +603,6 @@ impl<O: Output> LsService<O> {
     /// the appropriate action. Returns a `ServerStateChange` that describes how
     /// the service should proceed now that the message has been handled.
     pub fn handle_message(&mut self, mess: RawMessage) -> ServerStateChange {
-
         // If we're in shutdown mode, ignore any messages other than 'exit'.
         // This is not actually in the spec; I'm not sure we should do this,
         // but it kinda makes sense.
@@ -650,7 +651,7 @@ pub enum ServerToHandle {
     IsolatedAnalysisDone(CanonPath, Option<CanonPath>, Vec<PathBuf>),
     DeviceAnalysisDone(CanonPath),
     LinterDone(CanonPath),
-    AnalysisRequest(PathBuf, Option<CanonPath>),
+    AnalysisRequest(PathBuf, Option<CanonPath>, CanonPath),
 }
 
 // Indicates how the server should proceed.
@@ -685,6 +686,7 @@ fn server_caps<O: Output>(_ctx: &ActionContext<O>) -> ServerCapabilities {
         inline_value_provider: None,
         linked_editing_range_provider: None,
         moniker_provider: None,
+        // NOTE: This means we default to utf-16
         position_encoding: None,
         semantic_tokens_provider: None,
         text_document_sync: Some(TextDocumentSyncCapability::Options(
