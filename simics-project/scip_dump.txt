@@ -1,72 +1,29 @@
+Generating scip_pb2.py ...
+Generating scip_pb2.py ...
+Done → scip/scip_pb2.py
 Loading /home/hfeng1/dml-language-server/simics-project/index.scip ...
 Tool : dls 0.9.18
 Docs : 2
-  modules/wdt/wdt-registers.dml  (497 occurrences)
-  modules/wdt/wdt.dml  (702 occurrences)
+  modules/wdt/wdt-registers.dml  (661 occurrences)
+  modules/wdt/wdt.dml  (715 occurrences)
 
-Symbols: 539 defined  |  127 referenced
+Symbols: 703 defined  |  129 referenced
   local        71
   method       46
-  object       419
+  object       583
   template     3
 
 === Methods ===
-[method] signal_raise
-  Symbol : dml simics wdt . wdt.wclk_en.signal.signal_raise().
-  Defined: modules/wdt/wdt.dml:438
-  References (0 sites):
-
-[method] signal_raise
-  Symbol : dml simics wdt . wdt.wdogint.signal_raise().
-  Defined: modules/wdt/wdt.dml:480
-  References (2 sites):
-    modules/wdt/wdt.dml:308
-    modules/wdt/wdt.dml:97
-
-[method] write_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.write_register().
-  Defined: modules/wdt/wdt.dml:169
-  References (2 sites):
-    modules/wdt/wdt.dml:184
-    modules/wdt/wdt.dml:169
-
-[method] read_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID1.read_register().
-  Defined: modules/wdt/wdt.dml:400
-  References (1 sites):
-    modules/wdt/wdt.dml:400
-
-[method] write_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGLOAD.write_register().
-  Defined: modules/wdt/wdt.dml:144
-  References (2 sites):
-    modules/wdt/wdt.dml:151
-    modules/wdt/wdt.dml:144
-
-[method] signal_lower
-  Symbol : dml simics wdt . wdt.wdogint.signal_lower().
-  Defined: modules/wdt/wdt.dml:486
-  References (3 sites):
-    modules/wdt/wdt.dml:566
-    modules/wdt/wdt.dml:311
-    modules/wdt/wdt.dml:100
-
 [method] signal_raise
   Symbol : dml simics wdt . wdt.wrst_n.signal.signal_raise().
   Defined: modules/wdt/wdt.dml:458
   References (0 sites):
 
 [method] read_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID1.read_register().
-  Defined: modules/wdt/wdt.dml:368
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID6.read_register().
+  Defined: modules/wdt/wdt.dml:344
   References (1 sites):
-    modules/wdt/wdt.dml:368
-
-[method] init
-  Symbol : dml simics wdt . wdt.init().
-  Defined: modules/wdt/wdt.dml:571
-  References (1 sites):
-    modules/wdt/wdt.dml:571
+    modules/wdt/wdt.dml:344
 
 [method] write_register
   Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGINTCLR.write_register().
@@ -74,18 +31,59 @@ Symbols: 539 defined  |  127 referenced
   References (1 sites):
     modules/wdt/wdt.dml:222
 
+[method] init
+  Symbol : dml simics wdt . wdt.init().
+  Defined: modules/wdt/wdt.dml:571
+  References (1 sites):
+    modules/wdt/wdt.dml:571
+
+[method] signal_raise
+  Symbol : dml simics wdt . wdt.prst_n.signal.signal_raise().
+  Defined: modules/wdt/wdt.dml:469
+  References (0 sites):
+
+[method] perform_reset
+  Symbol : dml simics wdt . wdt.perform_reset().
+  Defined: modules/wdt/wdt.dml:546
+  References (2 sites):
+    modules/wdt/wdt.dml:474
+    modules/wdt/wdt.dml:463
+
+[method] event
+  Symbol : dml simics wdt . wdt.timeout_event.event().
+  Defined: modules/wdt/wdt.dml:30
+  References (1 sites):
+    modules/wdt/wdt.dml:30
+
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID3.read_register().
+  Defined: modules/wdt/wdt.dml:416
+  References (1 sites):
+    modules/wdt/wdt.dml:416
+
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID7.read_register().
+  Defined: modules/wdt/wdt.dml:352
+  References (1 sites):
+    modules/wdt/wdt.dml:352
+
+[method] signal_raise
+  Symbol : dml simics wdt . wdt.wclk.signal.signal_raise().
+  Defined: modules/wdt/wdt.dml:430
+  References (0 sites):
+
 === Templates ===
+[template] dml
+  Symbol : dml simics wdt . _home_hfeng1_dml_language_server_simics_project_modules_wdt_wdt_registers.dml#
+  Defined: modules/wdt/wdt-registers.dml:1
+  References (0 sites):
+
 [template] WatchdogRegisters_temp
   Symbol : dml simics wdt . WatchdogRegisters_temp#
   Defined: modules/wdt/wdt-registers.dml:14
   References (2 sites):
     modules/wdt/wdt.dml:142
     modules/wdt/wdt.dml:142
-
-[template] dml
-  Symbol : dml simics wdt . _home_hfeng1_dml_language_server_simics_project_modules_wdt_wdt_registers.dml#
-  Defined: modules/wdt/wdt-registers.dml:1
-  References (0 sites):
 
 [template] dml
   Symbol : dml simics wdt . _home_hfeng1_dml_language_server_simics_project_modules_wdt_wdt.dml#
@@ -104,15 +102,15 @@ Cross-file references
 
   [object] INTEN  (modules/wdt/wdt-registers.dml:50)
     <- modules/wdt/wdt.dml:124
-    <- modules/wdt/wdt.dml:187
-    <- modules/wdt/wdt.dml:87
-    <- modules/wdt/wdt.dml:78
-    <- modules/wdt/wdt.dml:176
     <- modules/wdt/wdt.dml:252
+    <- modules/wdt/wdt.dml:87
+    <- modules/wdt/wdt.dml:176
     <- modules/wdt/wdt.dml:441
+    <- modules/wdt/wdt.dml:78
+    <- modules/wdt/wdt.dml:187
 
   [object] INT_TEST_MODE_ENABLE  (modules/wdt/wdt-registers.dml:118)
     <- modules/wdt/wdt.dml:301
-    <- modules/wdt/wdt.dml:91
-    <- modules/wdt/wdt.dml:282
     <- modules/wdt/wdt.dml:108
+    <- modules/wdt/wdt.dml:282
+    <- modules/wdt/wdt.dml:91

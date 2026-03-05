@@ -20,6 +20,9 @@ PYPROJECT="$REPO_ROOT/scip"
 [ -f "$SCIP_FILE" ] || { echo "ERROR: index not found: $SCIP_FILE (run gen_scip.sh first)"; exit 1; }
 [ -f "$SCIP_PY" ]   || { echo "ERROR: read_scip.py not found: $SCIP_PY"; exit 1; }
 
+echo "Generating scip_pb2.py ..."
+bash "$REPO_ROOT/scip/generate_pb2.sh"
+
 if [ -n "$OUTPUT" ]; then
     uv run --project "$PYPROJECT" "$SCIP_PY" "$SCIP_FILE" > "$OUTPUT"
     echo "Dumped to: $OUTPUT"

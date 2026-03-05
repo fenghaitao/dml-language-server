@@ -35,9 +35,14 @@ DLS="$REPO_ROOT/target/release/dls"
 # ── sanity checks ─────────────────────────────────────────────────────────────
 
 [ -d "$MODULE_DIR" ]  || { echo "ERROR: module dir not found: $MODULE_DIR"; exit 1; }
-[ -f "$DFA" ]         || { echo "ERROR: dfa binary not found: $DFA (run cargo build --release)"; exit 1; }
-[ -f "$DLS" ]         || { echo "ERROR: dls binary not found: $DLS (run cargo build --release)"; exit 1; }
 [ -d "$DML_BASE" ]    || { echo "ERROR: DML base not found: $DML_BASE"; exit 1; }
+
+# ── build dfa/dls if needed ───────────────────────────────────────────────────
+
+if [ ! -f "$DFA" ] || [ ! -f "$DLS" ]; then
+    echo "Building dfa/dls (cargo build --release)..."
+    cargo build --release --manifest-path "$REPO_ROOT/Cargo.toml"
+fi
 
 # ── collect .dml files ────────────────────────────────────────────────────────
 
