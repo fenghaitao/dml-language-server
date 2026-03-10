@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# gen_scip.sh — generate dml_compile_info.json for a module and run dfa to
-# produce a SCIP index.
+# gen_scip.sh — run dfa to produce a SCIP index for a module.
+#
+# Requires bootstrap.sh to have been run first, which sets up the CMake
+# build and generates build/dml_compile_commands.json.
 #
 # Usage (from repo root or simics-project/):
 #   bash simics-project/gen_scip.sh <module_name> [output.scip]
@@ -28,7 +30,8 @@ SIMICS_ROOT="$(grep '^simics-root:' "$SCRIPT_DIR/.project-properties/project-pat
 
 DML_BASE="$SIMICS_ROOT/linux64/bin/dml"
 MODULE_DIR="$SCRIPT_DIR/modules/$MODULE"
-COMPILE_INFO="$SCRIPT_DIR/dml_compile_info.json"
+CMAKE_BUILD_DIR="$SCRIPT_DIR/build"
+COMPILE_INFO="$CMAKE_BUILD_DIR/dml_compile_commands.json"
 DFA="$REPO_ROOT/target/release/dfa"
 DLS="$REPO_ROOT/target/release/dls"
 
@@ -36,6 +39,7 @@ DLS="$REPO_ROOT/target/release/dls"
 
 [ -d "$MODULE_DIR" ]  || { echo "ERROR: module dir not found: $MODULE_DIR"; exit 1; }
 [ -d "$DML_BASE" ]    || { echo "ERROR: DML base not found: $DML_BASE"; exit 1; }
+[ -f "$COMPILE_INFO" ] || { echo "ERROR: $COMPILE_INFO not found — run bootstrap.sh first"; exit 1; }
 
 # ── build dfa/dls if needed ───────────────────────────────────────────────────
 
@@ -44,60 +48,45 @@ if [ ! -f "$DFA" ] || [ ! -f "$DLS" ]; then
     cargo build --release --manifest-path "$REPO_ROOT/Cargo.toml"
 fi
 
-# ── collect .dml files ────────────────────────────────────────────────────────
-
-mapfile -t DML_FILES < <(find "$MODULE_DIR" -maxdepth 1 -name "*.dml" | sort)
-
-[ ${#DML_FILES[@]} -gt 0 ] || { echo "ERROR: no .dml files found in $MODULE_DIR"; exit 1; }
+# ── collect .dml files from CMake JSON (authoritative source list) ────────────
+# After CMake runs we extract the top-level DML files for this module from the
+# generated JSON, rather than globbing the directory. This matches exactly what
+# the build system knows about (imported files like wdt-registers.dml are
+# resolved transitively by the DLS, not listed here explicitly).
 
 echo "Module   : $MODULE"
-echo "DML files: ${DML_FILES[*]}"
 echo "Simics   : $SIMICS_ROOT"
 
-# ── generate dml_compile_info.json ────────────────────────────────────────────
+# ── filter compile info to this module ───────────────────────────────────────
+# Extract only the entries for this module into a trimmed JSON for dfa.
+MODULE_COMPILE_INFO="$CMAKE_BUILD_DIR/dml_compile_commands_${MODULE}.json"
+python3 -c "
+import json
+data = json.load(open('$COMPILE_INFO'))
+module_dir = '$MODULE_DIR'
+filtered = {k: v for k, v in data.items() if module_dir in k}
+print(f'Filtered {len(filtered)} of {len(data)} entries for module $MODULE', flush=True)
+import sys; sys.stderr.write('')
+json.dump(filtered, open('$MODULE_COMPILE_INFO', 'w'), indent=4)
+"
+echo "Written  : $MODULE_COMPILE_INFO"
 
-# Read SIMICS_API from the module Makefile (default 7)
-SIMICS_API="$(grep -m1 '^SIMICS_API' "$MODULE_DIR/Makefile" 2>/dev/null \
-    | sed 's/.*:=\s*//' | tr -d '[:space:]')"
-SIMICS_API="${SIMICS_API:-7}"
+# Extract the DML files for this module from the filtered JSON
+mapfile -t DML_FILES < <(python3 -c "
+import json
+data = json.load(open('$MODULE_COMPILE_INFO'))
+for k in sorted(data.keys()):
+    print(k)
+")
 
-INCLUDES=(
-    "$DML_BASE/1.4"
-    "$DML_BASE/include"
-    "$DML_BASE"
-    "$DML_BASE/api/$SIMICS_API/1.4"
-)
-
-# Build JSON
-{
-    echo "{"
-    first=1
-    for f in "${DML_FILES[@]}"; do
-        [ "$first" -eq 0 ] && echo ","
-        first=0
-        printf '  "%s": {\n' "$f"
-        printf '    "dmlc_flags": [],\n'
-        printf '    "includes": [\n'
-        inc_first=1
-        for inc in "${INCLUDES[@]}"; do
-            [ "$inc_first" -eq 0 ] && echo ","
-            inc_first=0
-            printf '      "%s"' "$inc"
-        done
-        printf '\n    ]\n'
-        printf '  }'
-    done
-    echo ""
-    echo "}"
-} > "$COMPILE_INFO"
-
-echo "Written  : $COMPILE_INFO"
+[ ${#DML_FILES[@]} -gt 0 ] || { echo "ERROR: no entries for module '$MODULE' found in $COMPILE_INFO"; exit 1; }
+echo "DML files: ${DML_FILES[*]}"
 
 # ── run dfa ───────────────────────────────────────────────────────────────────
 
 echo "Running dfa..."
 "$DFA" \
-    --compile-info "$COMPILE_INFO" \
+    --compile-info "$MODULE_COMPILE_INFO" \
     --workspace "$SCRIPT_DIR" \
     --scip-output "$SCIP_OUT" \
     "$DLS" \

@@ -1,53 +1,61 @@
 Generating scip_pb2.py ...
 Generating scip_pb2.py ...
 Done → scip/scip_pb2.py
-Loading /home/hfeng1/dml-language-server/simics-project/index.scip ...
+Loading /nfs/site/home/hfeng1/coder/dml-language-server/simics-project/index.scip ...
 Tool : dls 0.9.18
 Docs : 2
-  modules/wdt/wdt-registers.dml  (661 occurrences)
   modules/wdt/wdt.dml  (715 occurrences)
+  modules/wdt/wdt-registers.dml  (661 occurrences)
 
-Symbols: 703 defined  |  129 referenced
+Symbols: 703 defined  |  131 referenced
   local        71
   method       46
   object       583
   template     3
 
 === Methods ===
-[method] signal_raise
-  Symbol : dml simics wdt . wdt.wrst_n.signal.signal_raise().
-  Defined: modules/wdt/wdt.dml:458
-  References (0 sites):
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID1.read_register().
+  Defined: modules/wdt/wdt.dml:400
+  References (1 sites):
+    modules/wdt/wdt.dml:400
 
 [method] read_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID6.read_register().
-  Defined: modules/wdt/wdt.dml:344
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGLOCK.read_register().
+  Defined: modules/wdt/wdt.dml:266
   References (1 sites):
-    modules/wdt/wdt.dml:344
+    modules/wdt/wdt.dml:266
 
-[method] write_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGINTCLR.write_register().
-  Defined: modules/wdt/wdt.dml:222
+[method] schedule_timeout
+  Symbol : dml simics wdt . wdt.schedule_timeout().
+  Defined: modules/wdt/wdt.dml:73
+  References (6 sites):
+    modules/wdt/wdt.dml:209
+    modules/wdt/wdt.dml:40
+    modules/wdt/wdt.dml:51
+    modules/wdt/wdt.dml:239
+    modules/wdt/wdt.dml:195
+    modules/wdt/wdt.dml:444
+
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.read_register().
+  Defined: modules/wdt/wdt.dml:288
   References (1 sites):
-    modules/wdt/wdt.dml:222
+    modules/wdt/wdt.dml:288
 
-[method] init
-  Symbol : dml simics wdt . wdt.init().
-  Defined: modules/wdt/wdt.dml:571
+[method] get_current_counter
+  Symbol : dml simics wdt . wdt.get_current_counter().
+  Defined: modules/wdt/wdt.dml:123
+  References (3 sites):
+    modules/wdt/wdt.dml:442
+    modules/wdt/wdt.dml:165
+    modules/wdt/wdt.dml:180
+
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID3.read_register().
+  Defined: modules/wdt/wdt.dml:384
   References (1 sites):
-    modules/wdt/wdt.dml:571
-
-[method] signal_raise
-  Symbol : dml simics wdt . wdt.prst_n.signal.signal_raise().
-  Defined: modules/wdt/wdt.dml:469
-  References (0 sites):
-
-[method] perform_reset
-  Symbol : dml simics wdt . wdt.perform_reset().
-  Defined: modules/wdt/wdt.dml:546
-  References (2 sites):
-    modules/wdt/wdt.dml:474
-    modules/wdt/wdt.dml:463
+    modules/wdt/wdt.dml:384
 
 [method] event
   Symbol : dml simics wdt . wdt.timeout_event.event().
@@ -55,27 +63,31 @@ Symbols: 703 defined  |  129 referenced
   References (1 sites):
     modules/wdt/wdt.dml:30
 
-[method] read_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID3.read_register().
-  Defined: modules/wdt/wdt.dml:416
-  References (1 sites):
-    modules/wdt/wdt.dml:416
-
-[method] read_register
-  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID7.read_register().
-  Defined: modules/wdt/wdt.dml:352
-  References (1 sites):
-    modules/wdt/wdt.dml:352
-
 [method] signal_raise
-  Symbol : dml simics wdt . wdt.wclk.signal.signal_raise().
-  Defined: modules/wdt/wdt.dml:430
-  References (0 sites):
+  Symbol : dml simics wdt . wdt.wdogres.signal_raise().
+  Defined: modules/wdt/wdt.dml:495
+  References (2 sites):
+    modules/wdt/wdt.dml:317
+    modules/wdt/wdt.dml:114
+
+[method] read_register
+  Symbol : dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID5.read_register().
+  Defined: modules/wdt/wdt.dml:336
+  References (1 sites):
+    modules/wdt/wdt.dml:336
+
+[method] signal_lower
+  Symbol : dml simics wdt . wdt.wdogint.signal_lower().
+  Defined: modules/wdt/wdt.dml:486
+  References (3 sites):
+    modules/wdt/wdt.dml:566
+    modules/wdt/wdt.dml:311
+    modules/wdt/wdt.dml:100
 
 === Templates ===
 [template] dml
-  Symbol : dml simics wdt . _home_hfeng1_dml_language_server_simics_project_modules_wdt_wdt_registers.dml#
-  Defined: modules/wdt/wdt-registers.dml:1
+  Symbol : dml simics wdt . _nfs_site_disks_hfeng1_fw_01_coder_dml_language_server_simics_project_modules_wdt_wdt.dml#
+  Defined: modules/wdt/wdt.dml:1
   References (0 sites):
 
 [template] WatchdogRegisters_temp
@@ -86,13 +98,34 @@ Symbols: 703 defined  |  129 referenced
     modules/wdt/wdt.dml:142
 
 [template] dml
-  Symbol : dml simics wdt . _home_hfeng1_dml_language_server_simics_project_modules_wdt_wdt.dml#
-  Defined: modules/wdt/wdt.dml:1
+  Symbol : dml simics wdt . _nfs_site_disks_hfeng1_fw_01_coder_dml_language_server_simics_project_modules_wdt_wdt_registers.dml#
+  Defined: modules/wdt/wdt-registers.dml:1
   References (0 sites):
 
 ============================================================
 Cross-file references
 ============================================================
+
+  [object] WDOGLOAD  (modules/wdt/wdt-registers.dml:15)
+    <- modules/wdt/wdt.dml:190
+    <- modules/wdt/wdt.dml:49
+    <- modules/wdt/wdt.dml:159
+    <- modules/wdt/wdt.dml:38
+    <- modules/wdt/wdt.dml:561
+    <- modules/wdt/wdt.dml:235
+
+  [object] WDOGCONTROL  (modules/wdt/wdt-registers.dml:35)
+    <- modules/wdt/wdt.dml:218
+    <- modules/wdt/wdt.dml:176
+    <- modules/wdt/wdt.dml:187
+    <- modules/wdt/wdt.dml:63
+    <- modules/wdt/wdt.dml:252
+    <- modules/wdt/wdt.dml:441
+    <- modules/wdt/wdt.dml:43
+    <- modules/wdt/wdt.dml:87
+    <- modules/wdt/wdt.dml:562
+    <- modules/wdt/wdt.dml:124
+    <- modules/wdt/wdt.dml:78
 
   [object] STEP_VALUE  (modules/wdt/wdt-registers.dml:38)
     <- modules/wdt/wdt.dml:63
@@ -101,16 +134,490 @@ Cross-file references
     <- modules/wdt/wdt.dml:43
 
   [object] INTEN  (modules/wdt/wdt-registers.dml:50)
-    <- modules/wdt/wdt.dml:124
-    <- modules/wdt/wdt.dml:252
-    <- modules/wdt/wdt.dml:87
-    <- modules/wdt/wdt.dml:176
-    <- modules/wdt/wdt.dml:441
     <- modules/wdt/wdt.dml:78
+    <- modules/wdt/wdt.dml:124
+    <- modules/wdt/wdt.dml:176
     <- modules/wdt/wdt.dml:187
+    <- modules/wdt/wdt.dml:252
+    <- modules/wdt/wdt.dml:441
+    <- modules/wdt/wdt.dml:87
+
+  [object] WDOGITCR  (modules/wdt/wdt-registers.dml:115)
+    <- modules/wdt/wdt.dml:108
+    <- modules/wdt/wdt.dml:290
+    <- modules/wdt/wdt.dml:563
+    <- modules/wdt/wdt.dml:301
+    <- modules/wdt/wdt.dml:91
+    <- modules/wdt/wdt.dml:282
 
   [object] INT_TEST_MODE_ENABLE  (modules/wdt/wdt-registers.dml:118)
-    <- modules/wdt/wdt.dml:301
-    <- modules/wdt/wdt.dml:108
     <- modules/wdt/wdt.dml:282
     <- modules/wdt/wdt.dml:91
+    <- modules/wdt/wdt.dml:108
+    <- modules/wdt/wdt.dml:301
+
+  [object] WDOGPERIPHID4  (modules/wdt/wdt-registers.dml:153)
+    <- modules/wdt/wdt.dml:332
+
+  [object] WDOGPERIPHID5  (modules/wdt/wdt-registers.dml:169)
+    <- modules/wdt/wdt.dml:340
+
+  [object] WDOGPERIPHID6  (modules/wdt/wdt-registers.dml:185)
+    <- modules/wdt/wdt.dml:348
+
+  [object] WDOGPERIPHID7  (modules/wdt/wdt-registers.dml:201)
+    <- modules/wdt/wdt.dml:356
+
+  [object] WDOGPERIPHID0  (modules/wdt/wdt-registers.dml:217)
+    <- modules/wdt/wdt.dml:364
+
+  [object] WDOGPERIPHID1  (modules/wdt/wdt-registers.dml:233)
+    <- modules/wdt/wdt.dml:372
+
+  [object] WDOGPERIPHID2  (modules/wdt/wdt-registers.dml:249)
+    <- modules/wdt/wdt.dml:380
+
+  [object] WDOGPERIPHID3  (modules/wdt/wdt-registers.dml:265)
+    <- modules/wdt/wdt.dml:388
+
+  [object] WDOGPCELLID0  (modules/wdt/wdt-registers.dml:281)
+    <- modules/wdt/wdt.dml:396
+
+  [object] WDOGPCELLID1  (modules/wdt/wdt-registers.dml:297)
+    <- modules/wdt/wdt.dml:404
+
+  [object] WDOGPCELLID2  (modules/wdt/wdt-registers.dml:313)
+    <- modules/wdt/wdt.dml:412
+
+  [object] WDOGPCELLID3  (modules/wdt/wdt-registers.dml:329)
+    <- modules/wdt/wdt.dml:420
+
+============================================================
+External symbols (system DML): 5123
+============================================================
+  local        421
+  method       1814
+  object       2713
+  template     175
+
+  84 referenced in docs  |  5039 unreferenced
+
+  [template] bank  (1 refs)
+    Symbol: dml simics wdt . bank#
+    <- modules/wdt/wdt.dml:142
+
+  [template] connect  (2 refs)
+    Symbol: dml simics wdt . connect#
+    <- modules/wdt/wdt.dml:478
+    <- modules/wdt/wdt.dml:493
+
+  [template] device  (1 refs)
+    Symbol: dml simics wdt . device#
+    <- modules/wdt/wdt.dml:11
+
+  [template] event  (1 refs)
+    Symbol: dml simics wdt . event#
+    <- modules/wdt/wdt.dml:29
+
+  [template] field  (41 refs)
+    Symbol: dml simics wdt . field#
+    <- modules/wdt/wdt-registers.dml:268
+    <- modules/wdt/wdt-registers.dml:220
+    <- modules/wdt/wdt-registers.dml:332
+    <- modules/wdt/wdt-registers.dml:274
+    <- modules/wdt/wdt-registers.dml:284
+    ... and 36 more
+
+  [template] implement  (4 refs)
+    Symbol: dml simics wdt . implement#
+    <- modules/wdt/wdt.dml:437
+    <- modules/wdt/wdt.dml:457
+    <- modules/wdt/wdt.dml:468
+    <- modules/wdt/wdt.dml:428
+
+  [template] interface  (2 refs)
+    Symbol: dml simics wdt . interface#
+    <- modules/wdt/wdt.dml:494
+    <- modules/wdt/wdt.dml:479
+
+  [template] port  (4 refs)
+    Symbol: dml simics wdt . port#
+    <- modules/wdt/wdt.dml:456
+    <- modules/wdt/wdt.dml:427
+    <- modules/wdt/wdt.dml:467
+    <- modules/wdt/wdt.dml:436
+
+  [template] read  (76 refs)
+    Symbol: dml simics wdt . read#
+    <- modules/wdt/wdt-registers.dml:325
+    <- modules/wdt/wdt-registers.dml:277
+    <- modules/wdt/wdt-registers.dml:213
+    <- modules/wdt/wdt-registers.dml:159
+    <- modules/wdt/wdt-registers.dml:223
+    ... and 71 more
+
+  [template] read_only  (64 refs)
+    Symbol: dml simics wdt . read_only#
+    <- modules/wdt/wdt-registers.dml:198
+    <- modules/wdt/wdt-registers.dml:256
+    <- modules/wdt/wdt-registers.dml:230
+    <- modules/wdt/wdt-registers.dml:60
+    <- modules/wdt/wdt-registers.dml:240
+    ... and 59 more
+
+  [template] register  (42 refs)
+    Symbol: dml simics wdt . register#
+    <- modules/wdt/wdt.dml:415
+    <- modules/wdt/wdt.dml:367
+    <- modules/wdt/wdt.dml:168
+    <- modules/wdt/wdt.dml:249
+    <- modules/wdt/wdt.dml:375
+    ... and 37 more
+
+  [template] simple_cycle_event  (2 refs)
+    Symbol: dml simics wdt . simple_cycle_event#
+    <- modules/wdt/wdt.dml:29
+    <- modules/wdt/wdt.dml:29
+
+  [object] NULL  (4 refs)
+    Symbol: dml simics wdt . wdt.NULL.
+    <- modules/wdt/wdt.dml:482
+    <- modules/wdt/wdt.dml:488
+    <- modules/wdt/wdt.dml:503
+    <- modules/wdt/wdt.dml:497
+
+  [object] val  (7 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.INTEN.val.
+    <- modules/wdt/wdt.dml:187
+    <- modules/wdt/wdt.dml:87
+    <- modules/wdt/wdt.dml:441
+    <- modules/wdt/wdt.dml:252
+    <- modules/wdt/wdt.dml:78
+    ... and 2 more
+
+  [object] val  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.RESEN.val.
+    <- modules/wdt/wdt.dml:43
+
+  [object] val  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.STEP_VALUE.val.
+    <- modules/wdt/wdt.dml:63
+
+  [object] dev  (3 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.dev.
+    <- modules/wdt/wdt.dml:191
+    <- modules/wdt/wdt.dml:199
+    <- modules/wdt/wdt.dml:208
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.read_register().
+    <- modules/wdt/wdt.dml:216
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.read_register().
+    <- modules/wdt/wdt.dml:216
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.write_register().
+    <- modules/wdt/wdt.dml:184
+    <- modules/wdt/wdt.dml:169
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGCONTROL.write_register().
+    <- modules/wdt/wdt.dml:184
+    <- modules/wdt/wdt.dml:169
+
+  [object] dev  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGINTCLR.dev.
+    <- modules/wdt/wdt.dml:236
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGINTCLR.write_register().
+    <- modules/wdt/wdt.dml:222
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGINTCLR.write_register().
+    <- modules/wdt/wdt.dml:222
+
+  [object] val  (4 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.INT_TEST_MODE_ENABLE.val.
+    <- modules/wdt/wdt.dml:91
+    <- modules/wdt/wdt.dml:108
+    <- modules/wdt/wdt.dml:301
+    <- modules/wdt/wdt.dml:282
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.read_register().
+    <- modules/wdt/wdt.dml:288
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.read_register().
+    <- modules/wdt/wdt.dml:288
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.write_register().
+    <- modules/wdt/wdt.dml:279
+    <- modules/wdt/wdt.dml:272
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITCR.write_register().
+    <- modules/wdt/wdt.dml:279
+    <- modules/wdt/wdt.dml:272
+
+  [object] val  (22 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITOP.val.
+    <- modules/wdt/wdt.dml:49
+    <- modules/wdt/wdt.dml:340
+    <- modules/wdt/wdt.dml:290
+    <- modules/wdt/wdt.dml:563
+    <- modules/wdt/wdt.dml:412
+    ... and 17 more
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITOP.write_register().
+    <- modules/wdt/wdt.dml:294
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGITOP.write_register().
+    <- modules/wdt/wdt.dml:294
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOAD.read_register().
+    <- modules/wdt/wdt.dml:157
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOAD.read_register().
+    <- modules/wdt/wdt.dml:157
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOAD.write_register().
+    <- modules/wdt/wdt.dml:151
+    <- modules/wdt/wdt.dml:144
+
+  [method] write_register  (2 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOAD.write_register().
+    <- modules/wdt/wdt.dml:151
+    <- modules/wdt/wdt.dml:144
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOCK.read_register().
+    <- modules/wdt/wdt.dml:266
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOCK.read_register().
+    <- modules/wdt/wdt.dml:266
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOCK.write_register().
+    <- modules/wdt/wdt.dml:257
+
+  [method] write_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGLOCK.write_register().
+    <- modules/wdt/wdt.dml:257
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGMIS.read_register().
+    <- modules/wdt/wdt.dml:250
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGMIS.read_register().
+    <- modules/wdt/wdt.dml:250
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID0.read_register().
+    <- modules/wdt/wdt.dml:392
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID0.read_register().
+    <- modules/wdt/wdt.dml:392
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID1.read_register().
+    <- modules/wdt/wdt.dml:400
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID1.read_register().
+    <- modules/wdt/wdt.dml:400
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID2.read_register().
+    <- modules/wdt/wdt.dml:408
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID2.read_register().
+    <- modules/wdt/wdt.dml:408
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID3.read_register().
+    <- modules/wdt/wdt.dml:416
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPCELLID3.read_register().
+    <- modules/wdt/wdt.dml:416
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID0.read_register().
+    <- modules/wdt/wdt.dml:360
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID0.read_register().
+    <- modules/wdt/wdt.dml:360
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID1.read_register().
+    <- modules/wdt/wdt.dml:368
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID1.read_register().
+    <- modules/wdt/wdt.dml:368
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID2.read_register().
+    <- modules/wdt/wdt.dml:376
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID2.read_register().
+    <- modules/wdt/wdt.dml:376
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID3.read_register().
+    <- modules/wdt/wdt.dml:384
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID3.read_register().
+    <- modules/wdt/wdt.dml:384
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID4.read_register().
+    <- modules/wdt/wdt.dml:328
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID4.read_register().
+    <- modules/wdt/wdt.dml:328
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID5.read_register().
+    <- modules/wdt/wdt.dml:336
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID5.read_register().
+    <- modules/wdt/wdt.dml:336
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID6.read_register().
+    <- modules/wdt/wdt.dml:344
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID6.read_register().
+    <- modules/wdt/wdt.dml:344
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID7.read_register().
+    <- modules/wdt/wdt.dml:352
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGPERIPHID7.read_register().
+    <- modules/wdt/wdt.dml:352
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGRIS.read_register().
+    <- modules/wdt/wdt.dml:244
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGRIS.read_register().
+    <- modules/wdt/wdt.dml:244
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGVALUE.read_register().
+    <- modules/wdt/wdt.dml:163
+
+  [method] read_register  (1 refs)
+    Symbol: dml simics wdt . wdt.WatchdogRegisters.WDOGVALUE.read_register().
+    <- modules/wdt/wdt.dml:163
+
+  [object] dev  (1 refs)
+    Symbol: dml simics wdt . wdt.dev.
+    <- modules/wdt/wdt.dml:128
+
+  [object] false  (16 refs)
+    Symbol: dml simics wdt . wdt.false.
+    <- modules/wdt/wdt.dml:556
+    <- modules/wdt/wdt.dml:580
+    <- modules/wdt/wdt.dml:312
+    <- modules/wdt/wdt.dml:577
+    <- modules/wdt/wdt.dml:229
+    ... and 11 more
+
+  [method] init  (1 refs)
+    Symbol: dml simics wdt . wdt.init().
+    <- modules/wdt/wdt.dml:571
+
+  [method] init  (1 refs)
+    Symbol: dml simics wdt . wdt.init().
+    <- modules/wdt/wdt.dml:571
+
+  [object] dev  (2 refs)
+    Symbol: dml simics wdt . wdt.timeout_event.dev.
+    <- modules/wdt/wdt.dml:39
+    <- modules/wdt/wdt.dml:50
+
+  [method] event  (1 refs)
+    Symbol: dml simics wdt . wdt.timeout_event.event().
+    <- modules/wdt/wdt.dml:30
+
+  [method] post  (1 refs)
+    Symbol: dml simics wdt . wdt.timeout_event.post().
+    <- modules/wdt/wdt.dml:81
+
+  [method] posted  (4 refs)
+    Symbol: dml simics wdt . wdt.timeout_event.posted().
+    <- modules/wdt/wdt.dml:548
+    <- modules/wdt/wdt.dml:201
+    <- modules/wdt/wdt.dml:74
+    <- modules/wdt/wdt.dml:450
+
+  [method] remove  (4 refs)
+    Symbol: dml simics wdt . wdt.timeout_event.remove().
+    <- modules/wdt/wdt.dml:75
+    <- modules/wdt/wdt.dml:202
+    <- modules/wdt/wdt.dml:549
+    <- modules/wdt/wdt.dml:451
+
+  [object] true  (11 refs)
+    Symbol: dml simics wdt . wdt.true.
+    <- modules/wdt/wdt.dml:98
+    <- modules/wdt/wdt.dml:44
+    <- modules/wdt/wdt.dml:558
+    <- modules/wdt/wdt.dml:318
+    <- modules/wdt/wdt.dml:579
+    ... and 6 more
+
+  [object] dev  (1 refs)
+    Symbol: dml simics wdt . wdt.wclk_en.signal.dev.
+    <- modules/wdt/wdt.dml:443
+
+  [object] obj  (4 refs)
+    Symbol: dml simics wdt . wdt.wdogres.obj.
+    <- modules/wdt/wdt.dml:482
+    <- modules/wdt/wdt.dml:503
+    <- modules/wdt/wdt.dml:497
+    <- modules/wdt/wdt.dml:488
+
+  [template] write  (18 refs)
+    Symbol: dml simics wdt . write#
+    <- modules/wdt/wdt-registers.dml:22
+    <- modules/wdt/wdt-registers.dml:69
+    <- modules/wdt/wdt-registers.dml:48
+    <- modules/wdt/wdt-registers.dml:42
+    <- modules/wdt/wdt-registers.dml:54
+    ... and 13 more
+
+  [template] write_only  (6 refs)
+    Symbol: dml simics wdt . write_only#
+    <- modules/wdt/wdt-registers.dml:144
+    <- modules/wdt/wdt-registers.dml:70
+    <- modules/wdt/wdt-registers.dml:138
+    <- modules/wdt/wdt-registers.dml:144
+    <- modules/wdt/wdt-registers.dml:138
+    ... and 1 more
+

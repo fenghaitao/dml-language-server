@@ -164,6 +164,39 @@ def main():
         for p, l in cross:
             print(f"    <- {p}:{l + 1}")
 
+    # ── 4. External symbols (system DML files outside project root) ───
+    print()
+    print("=" * 60)
+    print(f"External symbols (system DML): {len(index.external_symbols)}")
+    print("=" * 60)
+
+    # Group by the source file embedded in the symbol string (best-effort)
+    # and show a summary per kind, then list all symbols
+    ext_kinds = Counter(symbol_kind(s.symbol) for s in index.external_symbols)
+    for kind, count in sorted(ext_kinds.items()):
+        print(f"  {kind:<12} {count}")
+    print()
+
+    # Only show external symbols that are actually referenced in the docs
+    used_externals = [
+        s for s in index.external_symbols
+        if s.symbol in references
+    ]
+    unused_count = len(index.external_symbols) - len(used_externals)
+    print(f"  {len(used_externals)} referenced in docs  |  {unused_count} unreferenced\n")
+
+    for sym_info in sorted(used_externals, key=lambda s: s.symbol):
+        kind = symbol_kind(sym_info.symbol)
+        name = short_name(sym_info.symbol)
+        refs = references[sym_info.symbol]
+        print(f"  [{kind}] {name}  ({len(refs)} refs)")
+        print(f"    Symbol: {sym_info.symbol}")
+        for ref_path, ref_line in refs[:5]:
+            print(f"    <- {ref_path}:{ref_line + 1}")
+        if len(refs) > 5:
+            print(f"    ... and {len(refs) - 5} more")
+        print()
+
 
 if __name__ == "__main__":
     main()
