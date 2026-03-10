@@ -3,15 +3,17 @@
 <cite>
 **Referenced Files in This Document**
 - [indentation.rs](file://src/lint/rules/indentation.rs)
-- [mod.rs](file://src/lint/rules/mod.rs)
-- [lint/mod.rs](file://src/lint/mod.rs)
-- [no_tabs.rs](file://src/lint/rules/tests/indentation/no_tabs.rs)
+- [mod.rs](file://src/lint/mod.rs)
+- [features.md](file://src/lint/features.md)
+- [example_lint_cfg.json](file://example_files/example_lint_cfg.json)
+- [example_lint_cfg.README](file://example_files/example_lint_cfg.README)
 - [code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs)
 - [closing_brace.rs](file://src/lint/rules/tests/indentation/closing_brace.rs)
+- [no_tabs.rs](file://src/lint/rules/tests/indentation/no_tabs.rs)
 - [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs)
 - [switch_case.rs](file://src/lint/rules/tests/indentation/switch_case.rs)
 - [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs)
-- [tests/mod.rs](file://src/lint/rules/tests/indentation/mod.rs)
+- [continuation_line.rs](file://src/lint/rules/tests/indentation/continuation_line.rs)
 </cite>
 
 ## Table of Contents
@@ -24,370 +26,365 @@
 7. [Performance Considerations](#performance-considerations)
 8. [Troubleshooting Guide](#troubleshooting-guide)
 9. [Conclusion](#conclusion)
+10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the indentation-related lint rules that enforce consistent indentation practices in DML code. It covers each rule’s configuration, behavior, and interaction with the AST traversal pipeline. It also documents the depth parameter system for nested structures, indentation calculation algorithms, hierarchical enforcement, post-processing logic, and performance characteristics. Examples and edge cases are included to help diagnose violations and tune configurations.
+This document describes the indentation rules subsystem of the DML language server. It covers all indentation-related rules, including long_lines, indent_size, indent_no_tabs, indent_code_block, indent_closing_brace, indent_paren_expr, indent_switch_case, indent_empty_loop, and indent_continuation_line. It explains the indentation calculation algorithm, depth tracking system, and line length validation. It also documents configuration options for indentation spaces, tab enforcement, and nested structure handling, along with examples of correct patterns, common violations, and automated correction strategies. Finally, it details the relationship between indentation rules and the auxiliary parameter system used for depth calculation.
 
 ## Project Structure
-The indentation rules live under the linting subsystem and are integrated with the AST traversal and per-line checks. Configuration is centralized and supports defaults and overrides.
+The indentation rules are implemented as part of the linting subsystem. The core logic resides in a single module file, with rule-specific implementations and supporting configuration structures. Tests are organized per-rule under dedicated test modules.
 
 ```mermaid
 graph TB
-subgraph "Linting"
-LintCfg["LintCfg<br/>configuration"]
-Rules["CurrentRules<br/>instantiation"]
-PostProc["post_process_linting_errors()<br/>remove redundant errors"]
-Disabled["remove_disabled_lints()<br/>apply annotations"]
+subgraph "Linting Module"
+A["src/lint/mod.rs<br/>Lint configuration and instantiation"]
+B["src/lint/rules/mod.rs<br/>Exports indentation rules"]
+C["src/lint/rules/indentation.rs<br/>Indentation rule implementations"]
 end
-subgraph "Rules"
-IndentRules["Indentation Rules<br/>LongLines, NoTabs,<br/>CodeBlock, ClosingBrace,<br/>ParenExpr, SwitchCase,<br/>EmptyLoop"]
+subgraph "Tests"
+T1["tests/indentation/code_block.rs"]
+T2["tests/indentation/closing_brace.rs"]
+T3["tests/indentation/no_tabs.rs"]
+T4["tests/indentation/paren_expr.rs"]
+T5["tests/indentation/switch_case.rs"]
+T6["tests/indentation/empty_loop.rs"]
+T7["tests/indentation/continuation_line.rs"]
 end
-subgraph "AST"
-AST["TopAst<br/>style_check()"]
-Depth["AuxParams.depth<br/>nested depth tracking"]
-end
-LintCfg --> Rules
-Rules --> AST
-AST --> Depth
-AST --> IndentRules
-AST --> PostProc
-PostProc --> Disabled
+A --> B
+B --> C
+C -. referenced by .-> T1
+C -. referenced by .-> T2
+C -. referenced by .-> T3
+C -. referenced by .-> T4
+C -. referenced by .-> T5
+C -. referenced by .-> T6
+C -. referenced by .-> T7
 ```
 
 **Diagram sources**
-- [lint/mod.rs](file://src/lint/mod.rs#L209-L229)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L695)
-- [mod.rs](file://src/lint/rules/mod.rs#L43-L64)
+- [mod.rs](file://src/lint/mod.rs#L1-L171)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L859)
+- [code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L1-L301)
+- [closing_brace.rs](file://src/lint/rules/tests/indentation/closing_brace.rs#L1-L205)
+- [no_tabs.rs](file://src/lint/rules/tests/indentation/no_tabs.rs#L1-L74)
+- [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs#L1-L379)
+- [switch_case.rs](file://src/lint/rules/tests/indentation/switch_case.rs#L1-L59)
+- [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs#L1-L113)
+- [continuation_line.rs](file://src/lint/rules/tests/indentation/continuation_line.rs#L1-L195)
 
 **Section sources**
-- [lint/mod.rs](file://src/lint/mod.rs#L68-L157)
-- [mod.rs](file://src/lint/rules/mod.rs#L18-L64)
+- [mod.rs](file://src/lint/mod.rs#L1-L171)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L859)
 
 ## Core Components
-- LongLinesRule: Enforces a configurable maximum line length.
-- IndentNoTabRule: Prohibits tab characters in indentation.
-- IndentCodeBlockRule: Enforces alignment of code block members relative to the opening brace.
-- IndentClosingBraceRule: Enforces closing brace alignment and placement.
-- IndentParenExprRule: Enforces continuation alignment inside parenthesized expressions.
-- IndentSwitchCaseRule: Enforces case/default indentation and statement indentation.
-- IndentEmptyLoopRule: Enforces indentation of empty loop bodies.
+- LongLinesRule: Validates line length against a configurable maximum.
+- IndentNoTabRule: Enforces that tabs are not used for indentation.
+- IndentCodeBlockRule: Ensures code block members align to the expected indentation level based on depth and indentation_spaces.
+- IndentClosingBraceRule: Validates closing brace alignment and placement.
+- IndentParenExprRule: Validates continuation lines inside parenthesized expressions.
+- IndentSwitchCaseRule: Validates switch case and statement indentation.
+- IndentEmptyLoopRule: Validates indentation of empty loop bodies.
+- IndentContinuationLineRule: Validates continuation lines outside parenthesized expressions.
 
-Each rule exposes:
-- Options struct for configuration (e.g., IndentSizeOptions, IndentCodeBlockOptions).
-- A from_options constructor to build rule instances from LintCfg.
-- A check method that validates AST nodes or lines and appends DMLStyleError entries.
-
-Defaults and global indentation size propagation are handled centrally.
+These rules are instantiated from configuration and integrated into the linting pipeline.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L16-L38)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L40-L83)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L85-L120)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L122-L232)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L234-L366)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L369-L524)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L527-L606)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L608-L695)
-- [mod.rs](file://src/lint/rules/mod.rs#L18-L64)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L64-L140)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L142-L252)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L254-L386)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L389-L564)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L567-L646)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L648-L734)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L736-L859)
+- [mod.rs](file://src/lint/mod.rs#L21-L88)
 
 ## Architecture Overview
-The linting pipeline integrates indentation rules in two passes:
-- AST traversal pass: Rules receive structured arguments (e.g., IndentCodeBlockArgs, IndentParenExprArgs) and emit errors based on nested depth and structural positions.
-- Per-line pass: LongLinesRule and IndentNoTabRule scan each line for violations.
-
-Post-processing removes redundant errors caused by tab violations and applies user annotations to suppress specific rules.
+The indentation rules are part of the broader linting framework. Configuration is deserialized into a typed structure, then rules are instantiated and applied during analysis. The auxiliary parameter system supplies depth information to rules that require it.
 
 ```mermaid
 sequenceDiagram
 participant Client as "Client"
-participant Linter as "begin_style_check()"
-participant AST as "TopAst.style_check()"
-participant Rules as "CurrentRules"
-participant Post as "post_process_linting_errors()"
-participant Disabled as "remove_disabled_lints()"
-Client->>Linter : "Run lint on file"
-Linter->>AST : "Traverse AST with AuxParams{depth}"
-AST->>Rules : "Invoke rule.check(...) with node-specific args"
-Rules-->>AST : "Emit DMLStyleError[]"
-AST-->>Linter : "Accumulated errors"
-Linter->>Linter : "Per-line : long_lines, indent_no_tabs"
-Linter->>Post : "Remove redundant errors"
-Post-->>Linter : "Errors"
-Linter->>Disabled : "Filter disabled rules via annotations"
-Disabled-->>Linter : "Final errors"
-Linter-->>Client : "Reported errors"
+participant Config as "LintCfg"
+participant Mod as "lint : : mod.rs"
+participant Rules as "rules : : indentation.rs"
+participant AST as "AST"
+participant File as "Source File"
+Client->>Mod : Load configuration
+Mod->>Config : Parse JSON to LintCfg
+Mod->>Rules : instantiate_rules(cfg)
+Mod->>AST : Run style_check(AuxParams{depth : 0})
+AST->>Rules : Apply IN3/IN4/IN5/IN9/IN10 checks with depth
+Mod->>File : Per-line checks (IN2, LL1)
+Rules-->>Mod : Collected DMLStyleError[]
+Mod-->>Client : Lint results
 ```
 
 **Diagram sources**
-- [lint/mod.rs](file://src/lint/mod.rs#L209-L229)
-- [mod.rs](file://src/lint/rules/mod.rs#L22-L41)
+- [mod.rs](file://src/lint/mod.rs#L245-L265)
+- [mod.rs](file://src/lint/mod.rs#L63-L76)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L859)
+
+**Section sources**
+- [mod.rs](file://src/lint/mod.rs#L245-L265)
+- [mod.rs](file://src/lint/mod.rs#L63-L76)
 
 ## Detailed Component Analysis
 
-### LongLineOptions and LongLinesRule
-- Purpose: Detect lines exceeding a configured maximum length.
-- Configuration: LongLineOptions.max_length; default is provided.
-- Behavior: Emits a single error spanning the overflow region on the violating line.
-- Integration: Per-line check during begin_style_check.
+### Indentation Calculation Algorithm and Depth Tracking
+- Base unit: indentation_spaces defines the number of spaces per indentation level.
+- Depth is tracked via an auxiliary parameter passed to AST traversal. Rules compute expected indentation as depth × indentation_spaces.
+- Implicit rule IN7: Non-indented lines inherit indentation from the previous non-empty line; this is enforced indirectly by IN3’s alignment logic.
 
-```mermaid
-flowchart TD
-Start(["Per-line scan"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| Measure["Measure line length"]
-Measure --> Over{"Length > max_length?"}
-Over --> |No| Exit
-Over --> |Yes| Emit["Emit DMLStyleError over the overflow span"]
-Emit --> Exit
-```
+Key behaviors:
+- IN3 (indent_code_block): Members inside blocks must align to depth × indentation_spaces.
+- IN4 (indent_closing_brace): Closing brace alignment depends on the expected depth derived from the containing construct.
+- IN5 (indent_paren_expr): Continuation lines inside parentheses align to the column right after the opening parenthesis on the first line.
+- IN9 (indent_switch_case): Case labels align to switch depth; statements inside a compound case align deeper.
+- IN10 (indent_empty_loop): Empty loop semicolons align to the loop body depth.
+- IN6 (indent_continuation_line): Continuation lines outside parentheses align to (depth + 1) × indentation_spaces.
 
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L49-L72)
-- [lint/mod.rs](file://src/lint/mod.rs#L214-L220)
+Depth derivation:
+- Compound statements and blocks increase depth.
+- Switch constructs adjust depth differently for closing brace checks.
+- Loop constructs increase depth for empty body semicolons.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L40-L83)
-- [tests/mod.rs](file://src/lint/rules/tests/indentation/mod.rs#L15-L43)
-- [lint/mod.rs](file://src/lint/mod.rs#L214-L220)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L234-L238)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L380-L384)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L535-L550)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L628-L632)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L717-L720)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L825-L844)
 
-### IndentSizeOptions and Global Propagation
-- Purpose: Centralize indentation size for indentation-sensitive rules.
-- Behavior: setup_indentation_size propagates indentation_spaces to related options (code block, switch case, empty loop).
+### Configuration Options and Defaults
+- indent_size: Sets indentation_spaces globally for indentation rules that accept an indentation_spaces option.
+- long_lines: Controls line length validation with max_length.
+- indent_no_tabs: Disables tabs for indentation.
+- indent_code_block, indent_closing_brace, indent_switch_case, indent_empty_loop, indent_continuation_line: Accept indentation_spaces to customize spacing per rule.
+- indent_paren_expr: No configuration; applies fixed alignment inside parentheses.
 
-```mermaid
-flowchart TD
-LoadCfg["Load LintCfg"] --> HasSize{"indent_size set?"}
-HasSize --> |No| Defaults["Use default size"]
-HasSize --> |Yes| Apply["Set indentation_spaces"]
-Apply --> Propagate["Propagate to:<br/>indent_code_block<br/>indent_switch_case<br/>indent_empty_loop"]
-Defaults --> Propagate
-Propagate --> Done(["Ready for rule instantiation"])
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L23-L38)
-- [lint/mod.rs](file://src/lint/mod.rs#L56-L56)
+Defaults are defined and applied during configuration initialization.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L16-L38)
-- [lint/mod.rs](file://src/lint/mod.rs#L31-L34)
-- [lint/mod.rs](file://src/lint/mod.rs#L146-L156)
+- [mod.rs](file://src/lint/mod.rs#L106-L133)
+- [mod.rs](file://src/lint/mod.rs#L154-L184)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L33-L38)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L40-L58)
+- [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L28)
+- [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L22-L28)
 
-### IndentNoTabOptions and IndentNoTabRule
+### Rule-by-Rule Behavior and Examples
+
+#### LongLinesRule (LL1)
+- Purpose: Enforce a maximum line length.
+- Behavior: Emits an error when a line exceeds max_length.
+- Configuration: long_lines.max_length.
+
+Examples:
+- Correct: Lines under the threshold.
+- Incorrect: Lines exceeding the threshold.
+
+**Section sources**
+- [indentation.rs](file://src/lint/rules/indentation.rs#L64-L92)
+- [mod.rs](file://src/lint/mod.rs#L106-L106)
+- [features.md](file://src/lint/features.md#L52-L53)
+
+#### IndentNoTabRule (IN2)
 - Purpose: Prohibit tab characters in indentation.
-- Behavior: Scans each line and emits an error for each tab found.
-- Post-processing: post_process_linting_errors removes subsequent indentation rule errors on lines containing tabs.
+- Behavior: Scans each line and reports tabs found within indentation.
+- Configuration: indent_no_tabs (enable/disable).
 
-```mermaid
-flowchart TD
-Start(["Per-line scan"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| Scan["Scan line for tab characters"]
-Scan --> Found{"Any tabs?"}
-Found --> |No| Exit
-Found --> |Yes| Emit["Emit error per tab"]
-Emit --> Exit
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L97-L110)
-- [lint/mod.rs](file://src/lint/mod.rs#L214-L220)
-- [lint/mod.rs](file://src/lint/mod.rs#L366-L379)
+Examples:
+- Correct: Only spaces used for indentation.
+- Incorrect: Tabs used in indentation.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L85-L120)
-- [no_tabs.rs](file://src/lint/rules/tests/indentation/no_tabs.rs#L4-L41)
-- [lint/mod.rs](file://src/lint/mod.rs#L366-L379)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L113-L140)
+- [no_tabs.rs](file://src/lint/rules/tests/indentation/no_tabs.rs#L1-L74)
 
-### IndentCodeBlockOptions and IndentCodeBlockRule
-- Purpose: Enforce that members inside code blocks align with expected indentation derived from depth.
-- Calculation: expected column = depth × indentation_spaces.
-- Scope: Works with compound statements, object statements (list form), struct types, layouts, and bitfields.
-- Edge cases: Ignores empty blocks and trivial cases where brace and member are on the same row.
+#### IndentCodeBlockRule (IN3)
+- Purpose: Align code block members to expected indentation.
+- Behavior: Computes expected column as depth × indentation_spaces and validates each member.
+- Configuration: indent_code_block.indentation_spaces.
 
-```mermaid
-flowchart TD
-Start(["Members in block"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| Empty{"Any members?"}
-Empty --> |No| Exit
-Empty --> |Yes| SameRow{"Opening brace vs. first member on same row?"}
-SameRow --> |Yes| Exit
-SameRow --> |No| Check["For each member:<br/>col_start != depth*spaces?"]
-Check --> Violation{"Violation?"}
-Violation --> |No| Exit
-Violation --> |Yes| Emit["Emit error for member range"]
-Emit --> Exit
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L187-L219)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L140-L185)
+Examples:
+- Correct: Members indented consistently inside blocks.
+- Incorrect: Misaligned members inside blocks.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L122-L232)
-- [code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L4-L37)
-- [code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L144-L175)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L142-L252)
+- [code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L1-L301)
 
-### IndentClosingBraceOptions and IndentClosingBraceRule
-- Purpose: Enforce closing brace alignment and placement.
-- Calculation: expected column for closing brace is (depth − 1) × indentation_spaces (or depth for switch).
-- Logic: If the opening and closing brace are on the same line, skip. If the last member and closing brace share a row, flag. Otherwise, check alignment against expected depth.
+#### IndentClosingBraceRule (IN4)
+- Purpose: Validate closing brace alignment and placement.
+- Behavior: Checks that closing brace appears first on the line and aligns to the expected depth; special handling for switch constructs.
+- Configuration: indent_closing_brace.indentation_spaces.
 
-```mermaid
-flowchart TD
-Start(["Compound/Switch/Struct/Layout/Bitfields"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| SameLine{"Open brace == close brace on same row?"}
-SameLine --> |Yes| Exit
-SameLine --> |No| LastSame{"Last member on same row as close brace?"}
-LastSame --> |Yes| Emit1["Emit error for close brace"]
-LastSame --> |No| Align{"Close brace column == (depth±1)*spaces?"}
-Align --> |No| Emit2["Emit error for close brace"]
-Align --> |Yes| Exit
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L329-L366)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L266-L327)
+Examples:
+- Correct: Brace on its own line and properly aligned.
+- Incorrect: Over/under-indented or not-first-in-line.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L234-L366)
-- [closing_brace.rs](file://src/lint/rules/tests/indentation/closing_brace.rs#L17-L95)
-- [closing_brace.rs](file://src/lint/rules/tests/indentation/closing_brace.rs#L177-L202)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L254-L386)
+- [closing_brace.rs](file://src/lint/rules/tests/indentation/closing_brace.rs#L1-L205)
 
-### IndentParenExprOptions and IndentParenExprRule
-- Purpose: Enforce continuation alignment inside parenthesized expressions.
-- Algorithm: Compute expected start column as (left-paren column + 1). For each continuation token, ensure it starts at the expected column on its line.
-- Filtering: Nested parentheses are filtered out to avoid double-checking nested expressions that are validated by their own rule.
+#### IndentParenExprRule (IN5)
+- Purpose: Align continuation lines inside parenthesized expressions with the opening parenthesis.
+- Behavior: Filters tokens to avoid nested parentheses and checks continuation lines’ alignment.
+- Configuration: none.
 
-```mermaid
-flowchart TD
-Start(["Paren node tokens"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| LP["Capture lparen column"]
-LP --> Expected["expected = lparen.col + 1"]
-Expected --> Iterate["Iterate tokens"]
-Iterate --> NewLine{"New line?"}
-NewLine --> |Yes| Update["Update last_row"]
-Update --> Check["If col_start != expected:<br/>emit error"]
-NewLine --> |No| Iterate
-Check --> Iterate
-Iterate --> Done(["Done"])
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L493-L511)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L381-L491)
+Examples:
+- Correct: Continuation lines line up inside parentheses.
+- Incorrect: Misaligned continuation lines inside parentheses.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L369-L524)
-- [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs#L7-L32)
-- [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs#L109-L129)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L389-L564)
+- [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs#L1-L379)
 
-### IndentSwitchCaseOptions and IndentSwitchCaseRule
-- Purpose: Enforce case/default indentation and statement indentation.
-- Calculation: Case labels align to depth × indentation_spaces; statements inside a case are indented one additional level.
-- Exceptions: Skips compound statements immediately after case and hash-if constructs.
+#### IndentSwitchCaseRule (IN9)
+- Purpose: Align case labels and statements within switch blocks.
+- Behavior: Case labels align to switch depth; statements inside a compound case align deeper; excludes certain constructs.
+- Configuration: indent_switch_case.indentation_spaces.
 
-```mermaid
-flowchart TD
-Start(["SwitchCase node"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| Skip{"Compound after case or hash-if?"}
-Skip --> |Yes| Exit
-Skip --> |No| Align["Check case label column == depth*spaces"]
-Align --> Violation{"Aligned?"}
-Violation --> |No| Emit["Emit error"]
-Violation --> |Yes| Exit
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L566-L593)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L543-L564)
+Examples:
+- Correct: Case labels and statements properly indented.
+- Incorrect: Misaligned case labels or statements.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L527-L606)
-- [switch_case.rs](file://src/lint/rules/tests/indentation/switch_case.rs#L27-L56)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L567-L646)
+- [switch_case.rs](file://src/lint/rules/tests/indentation/switch_case.rs#L1-L59)
 
-### IndentEmptyLoopOptions and IndentEmptyLoopRule
-- Purpose: Enforce indentation of the semicolon in empty loops.
-- Calculation: Semicolon column should equal (loop_depth + 1) × indentation_spaces; loop keyword and semicolon must not be on the same line.
-- Supported constructs: for and while empty loops.
+#### IndentEmptyLoopRule (IN10)
+- Purpose: Indent empty loop bodies appropriately.
+- Behavior: Validates semicolon alignment and ensures it is not on the same line as the loop keyword.
+- Configuration: indent_empty_loop.indentation_spaces.
 
-```mermaid
-flowchart TD
-Start(["For/While node"]) --> Enabled{"Enabled?"}
-Enabled --> |No| Exit(["Skip"])
-Enabled --> |Yes| EmptyStmt{"Body is Empty(semicolon)?"}
-EmptyStmt --> |No| Exit
-EmptyStmt --> |Yes| Check["Check:<br/>semicolon column == (depth+1)*spaces<br/>and loop keyword != same line as semicolon"]
-Check --> Violation{"Violated?"}
-Violation --> |No| Exit
-Violation --> |Yes| Emit["Emit combined range error"]
-Emit --> Exit
-```
-
-**Diagram sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L652-L681)
-- [indentation.rs](file://src/lint/rules/indentation.rs#L620-L650)
+Examples:
+- Correct: Semicolon indented at loop body depth.
+- Incorrect: Misaligned or misplaced semicolon.
 
 **Section sources**
-- [indentation.rs](file://src/lint/rules/indentation.rs#L608-L695)
-- [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs#L4-L18)
-- [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs#L54-L110)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L648-L734)
+- [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs#L1-L113)
+
+#### IndentContinuationLineRule (IN6)
+- Purpose: Align continuation lines outside parentheses to (depth + 1) × indentation_spaces.
+- Behavior: Filters tokens and enforces alignment for continuation lines.
+- Configuration: indent_continuation_line.indentation_spaces.
+
+Examples:
+- Correct: Continuation lines indented one level deeper than parent depth.
+- Incorrect: Misaligned continuation lines.
+
+**Section sources**
+- [indentation.rs](file://src/lint/rules/indentation.rs#L736-L859)
+- [continuation_line.rs](file://src/lint/rules/tests/indentation/continuation_line.rs#L1-L195)
+
+### Automated Correction Strategies
+- Indentation fixes are typically performed by adjusting leading whitespace to match expected columns computed from depth and indentation_spaces.
+- For IN3/IN9/IN10, align the first token of the line to depth × indentation_spaces or (depth + 1) × indentation_spaces.
+- For IN4, ensure the closing brace is first on the line and aligned to the expected depth.
+- For IN5, align continuation lines inside parentheses to the position right after the opening parenthesis on the first line.
+- For IN6, align continuation lines outside parentheses to (depth + 1) × indentation_spaces.
+- For IN2, replace tab characters with the equivalent number of spaces based on the current column and indentation_spaces.
+
+[No sources needed since this section provides general guidance]
 
 ## Dependency Analysis
-- Rule instantiation: CurrentRules aggregates all rules and sets enabled flags from LintCfg.
-- Rule types: Each rule implements Rule and exposes a RuleType discriminant for filtering and annotations.
-- Post-processing: A dedicated pass removes redundant errors produced by tab violations; another pass filters errors suppressed by user annotations.
+The indentation rules share a common configuration model and rely on the auxiliary depth parameter. They are instantiated from LintCfg and applied during AST traversal and per-line scanning.
 
 ```mermaid
 graph LR
-LintCfg["LintCfg"] --> CurrentRules["CurrentRules"]
-CurrentRules --> LongLines["LongLinesRule"]
-CurrentRules --> NoTabs["IndentNoTabRule"]
-CurrentRules --> CodeBlock["IndentCodeBlockRule"]
-CurrentRules --> CloseBrace["IndentClosingBraceRule"]
-CurrentRules --> ParenExpr["IndentParenExprRule"]
-CurrentRules --> SwitchCase["IndentSwitchCaseRule"]
-CurrentRules --> EmptyLoop["IndentEmptyLoopRule"]
-AST["TopAst"] --> CurrentRules
-CurrentRules --> Errors["Vec<DMLStyleError>"]
-Errors --> Post["post_process_linting_errors()"]
-Errors --> Disabled["remove_disabled_lints()"]
+Cfg["LintCfg<br/>indent_size, long_lines, indent_no_tabs,<br/>indent_* options"]
+Inst["instantiate_rules(cfg)"]
+R1["LongLinesRule"]
+R2["IndentNoTabRule"]
+R3["IndentCodeBlockRule"]
+R4["IndentClosingBraceRule"]
+R5["IndentParenExprRule"]
+R6["IndentSwitchCaseRule"]
+R7["IndentEmptyLoopRule"]
+R8["IndentContinuationLineRule"]
+Cfg --> Inst
+Inst --> R1
+Inst --> R2
+Inst --> R3
+Inst --> R4
+Inst --> R5
+Inst --> R6
+Inst --> R7
+Inst --> R8
 ```
 
 **Diagram sources**
-- [mod.rs](file://src/lint/rules/mod.rs#L22-L64)
-- [lint/mod.rs](file://src/lint/mod.rs#L209-L229)
+- [mod.rs](file://src/lint/mod.rs#L62-L88)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L859)
 
 **Section sources**
-- [mod.rs](file://src/lint/rules/mod.rs#L18-L64)
-- [lint/mod.rs](file://src/lint/mod.rs#L366-L392)
+- [mod.rs](file://src/lint/mod.rs#L62-L88)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L1-L859)
 
 ## Performance Considerations
-- Single-pass scanning: LongLinesRule and IndentNoTabRule operate in O(n_lines) time with minimal overhead.
-- AST traversal: Indentation rules rely on node-specific argument builders that collect ranges efficiently; avoid re-scanning tokens unnecessarily.
-- Post-processing cost: post_process_linting_errors iterates over errors once and performs containment checks; keep error counts reasonable.
-- Token filtering: IndentParenExprRule filters nested parentheses to prevent redundant checks; this reduces repeated work on deeply nested expressions.
+- Token filtering and iteration occur primarily in IN5 and IN6; avoid unnecessary allocations by reusing iterators and minimizing repeated scans.
+- IN2 performs a linear scan per line; keep line lengths reasonable to minimize overhead.
+- IN3/IN9/IN10 rely on precomputed ranges; ensure efficient range queries and avoid redundant computations.
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
-Common issues and debugging techniques:
-- Tabs in indentation cause cascading errors across multiple rules. The post-processor removes subsequent indentation rule errors on lines containing tabs. To investigate, temporarily disable post-processing or review the per-line pass.
-- Switch case misalignment often occurs when the statement indentation level is incorrect. Verify the expected depth and indentation_spaces.
-- Empty loop errors frequently arise when the semicolon is not indented to the next level or appears on the same line as the loop keyword.
-- Parenthesized expression continuation errors indicate misaligned continuation lines; confirm the expected column equals the left-paren column plus one.
-- Use dml-lint annotations to allow specific rules per file or per line to isolate problematic regions and narrow down the root cause.
+Common issues and resolutions:
+- Misaligned closing braces: Ensure the closing brace is first on the line and aligned to the expected depth.
+- Misaligned code block members: Verify indentation_spaces and depth are consistent across nested constructs.
+- Misaligned continuation lines: For IN5, align inside parentheses; for IN6, align to (depth + 1) × indentation_spaces.
+- Empty loop semicolons: Ensure the semicolon is indented at the loop body depth and not on the same line as the loop keyword.
+- Tabs in indentation: Replace tabs with spaces based on indentation_spaces.
+
+Validation references:
+- IN2: Per-line tab scanning.
+- IN3: Member alignment checks.
+- IN4: Closing brace alignment and placement.
+- IN5: Parentheses continuation alignment.
+- IN6: Continuation line alignment outside parentheses.
+- IN9: Switch case and statement alignment.
+- IN10: Empty loop body alignment.
 
 **Section sources**
-- [lint/mod.rs](file://src/lint/mod.rs#L366-L379)
-- [lint/mod.rs](file://src/lint/mod.rs#L252-L364)
-- [switch_case.rs](file://src/lint/rules/tests/indentation/switch_case.rs#L27-L56)
-- [empty_loop.rs](file://src/lint/rules/tests/indentation/empty_loop.rs#L4-L18)
-- [paren_expr.rs](file://src/lint/rules/tests/indentation/paren_expr.rs#L7-L32)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L117-L128)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L220-L233)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L363-L385)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L529-L550)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L820-L845)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L619-L627)
+- [indentation.rs](file://src/lint/rules/indentation.rs#L705-L716)
 
 ## Conclusion
-The indentation lint suite enforces consistent DML indentation through a combination of AST-aware checks and per-line validations. The depth parameter system and indentation size propagation enable predictable, hierarchical enforcement. Post-processing ensures clean reporting by removing redundant errors, while annotations provide fine-grained control over rule applicability. Tuning configuration and understanding the depth semantics are key to effective diagnostics and maintenance of consistent indentation across complex DML constructs.
+The indentation rules subsystem provides comprehensive enforcement of indentation styles across DML constructs. By centralizing indentation_spaces configuration and leveraging a shared depth parameter, the rules maintain consistency across nested structures. Tests validate expected behaviors for each rule, ensuring reliable detection and guiding automated corrections.
+
+[No sources needed since this section summarizes without analyzing specific files]
+
+## Appendices
+
+### Configuration Reference
+- indent_size: Sets indentation_spaces globally for indentation rules.
+- long_lines: Controls line length validation with max_length.
+- indent_no_tabs: Enables tab prohibition.
+- indent_code_block, indent_closing_brace, indent_switch_case, indent_empty_loop, indent_continuation_line: Accept indentation_spaces.
+
+**Section sources**
+- [mod.rs](file://src/lint/mod.rs#L106-L133)
+- [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L28)
+- [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L22-L28)
+
+### Rule Type Index
+- IN2: indent_no_tabs
+- IN3: indent_code_block
+- IN4: indent_closing_brace
+- IN5: indent_paren_expr
+- IN6: indent_continuation_line
+- IN9: indent_switch_case
+- IN10: indent_empty_loop
+- LL1: long_lines
+
+**Section sources**
+- [mod.rs](file://src/lint/mod.rs#L107-L133)
+- [features.md](file://src/lint/features.md#L22-L51)

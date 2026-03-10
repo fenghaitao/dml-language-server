@@ -4,364 +4,274 @@
 **Referenced Files in This Document**
 - [README.md](file://README.md)
 - [USAGE.md](file://USAGE.md)
-- [clients.md](file://clients.md)
-- [CONTRIBUTING.md](file://CONTRIBUTING.md)
 - [Cargo.toml](file://Cargo.toml)
+- [clients.md](file://clients.md)
 - [src/main.rs](file://src/main.rs)
-- [src/lib.rs](file://src/lib.rs)
+- [src/cmd.rs](file://src/cmd.rs)
 - [src/config.rs](file://src/config.rs)
-- [python-port/README.md](file://python-port/README.md)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml)
-- [python-port/examples/compile_commands.json](file://python-port/examples/compile_commands.json)
-- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json)
+- [src/lint/mod.rs](file://src/lint/mod.rs)
 - [example_files/watchdog_timer.dml](file://example_files/watchdog_timer.dml)
+- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json)
+- [example_files/example_lint_cfg.README](file://example_files/example_lint_cfg.README)
+- [MCP_SERVER_GUIDE.md](file://MCP_SERVER_GUIDE.md)
 </cite>
 
 ## Table of Contents
 1. [Introduction](#introduction)
-2. [Project Structure](#project-structure)
-3. [Core Components](#core-components)
-4. [Architecture Overview](#architecture-overview)
-5. [Detailed Component Analysis](#detailed-component-analysis)
-6. [Dependency Analysis](#dependency-analysis)
-7. [Performance Considerations](#performance-considerations)
-8. [Troubleshooting Guide](#troubleshooting-guide)
-9. [Conclusion](#conclusion)
-10. [Appendices](#appendices)
+2. [Prerequisites](#prerequisites)
+3. [Installation](#installation)
+4. [Basic Configuration](#basic-configuration)
+5. [Initial Usage](#initial-usage)
+6. [DML Compile Commands File Format](#dml-compile-commands-file-format)
+7. [Lint Configuration](#lint-configuration)
+8. [IDE Integration](#ide-integration)
+9. [Practical Examples](#practical-examples)
+10. [Verification and Testing](#verification-and-testing)
+11. [Troubleshooting](#troubleshooting)
+12. [Conclusion](#conclusion)
 
 ## Introduction
-This guide helps you install and integrate the DML Language Server (DLS) for DML 1.4 development. It covers:
-- Building from source (Rust-based server)
-- Running pre-built binaries
-- Using the Python port alternative
-- Basic workflow from installation to first IDE integration
-- Prerequisites: DML language basics, LSP protocol understanding, and editor configuration
-- IDE setup for common editors
-- Configuring compile_commands.json
-- Initial testing and verification
-- Troubleshooting and verification steps
-- Guidance on choosing between Rust-based and Python-based deployments
+This guide helps you install, configure, and use the DML Language Server (DLS). It covers building from source, configuring compile commands and linting, integrating with an editor via the Language Server Protocol (LSP), and verifying your setup with sample DML files.
 
-## Project Structure
-The repository provides:
-- A Rust-based language server with CLI and LSP modes
-- A Python port that mirrors the Rust architecture and APIs
-- Example DML files and configuration samples
-- Documentation for usage, clients, and contribution
+Key capabilities include:
+- Syntax diagnostics
+- Symbol search and navigation (go-to-definition, references, implementations)
+- Basic configurable linting
+- MCP (Model Context Protocol) server for AI-assisted development
 
-```mermaid
-graph TB
-subgraph "Rust Server"
-RMain["src/main.rs"]
-RLib["src/lib.rs"]
-RConfig["src/config.rs"]
-RCargo["Cargo.toml"]
-end
-subgraph "Python Port"
-PReadme["python-port/README.md"]
-PPyproj["python-port/pyproject.toml"]
-PExamples["python-port/examples/compile_commands.json"]
-end
-subgraph "Examples"
-EDoc["README.md"]
-ELint["example_files/example_lint_cfg.json"]
-EDml["example_files/watchdog_timer.dml"]
-end
-RMain --> RLib
-RLib --> RConfig
-RCargo --> RMain
-PReadme --> PPyproj
-PPyproj --> PExamples
-EDoc --> EDml
-EDoc --> ELint
-```
-
-**Diagram sources**
-- [src/main.rs](file://src/main.rs#L1-L60)
-- [src/lib.rs](file://src/lib.rs#L1-L54)
-- [src/config.rs](file://src/config.rs#L120-L139)
-- [Cargo.toml](file://Cargo.toml#L1-L62)
-- [python-port/README.md](file://python-port/README.md#L1-L243)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L1-L106)
-- [python-port/examples/compile_commands.json](file://python-port/examples/compile_commands.json#L1-L14)
-- [README.md](file://README.md#L1-L57)
-- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-- [example_files/watchdog_timer.dml](file://example_files/watchdog_timer.dml#L1-L146)
+Important note: DLS supports DML 1.4 only.
 
 **Section sources**
 - [README.md](file://README.md#L1-L57)
-- [python-port/README.md](file://python-port/README.md#L1-L243)
-- [Cargo.toml](file://Cargo.toml#L1-L62)
+- [USAGE.md](file://USAGE.md#L1-L120)
 
-## Core Components
-- Rust server binary and library:
-  - Entry point parses CLI and runs either LSP server or CLI mode
-  - Configuration model supports linting, compile info, and analysis policies
-- Python port:
-  - Provides the same LSP, CLI, DFA, and MCP tools as the Rust server
-  - Scripts registered for dls, dfa, and dml-mcp-server
-- Examples:
-  - Sample DML device file and lint configuration for quick testing
-
-Key capabilities:
-- LSP-based IDE integration
-- CLI mode for testing and debugging
-- DFA for batch analysis
-- MCP server for AI-assisted development
+## Prerequisites
+- Install Rust toolchain (stable) to build the server from source.
+- Basic understanding of the Language Server Protocol (LSP).
+- Familiarity with DML language constructs and DML 1.4 syntax.
+- An editor or IDE that speaks LSP (e.g., VS Code, Neovim, Emacs).
 
 **Section sources**
-- [src/main.rs](file://src/main.rs#L21-L60)
-- [src/lib.rs](file://src/lib.rs#L32-L47)
-- [src/config.rs](file://src/config.rs#L120-L139)
-- [python-port/README.md](file://python-port/README.md#L33-L77)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L60-L63)
-- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-- [example_files/watchdog_timer.dml](file://example_files/watchdog_timer.dml#L1-L146)
+- [README.md](file://README.md#L18-L21)
 
-## Architecture Overview
-High-level architecture for both Rust and Python ports:
+## Installation
+Build the DML Language Server in release mode using Cargo.
 
-```mermaid
-graph TB
-subgraph "Rust Server"
-RServe["LSP Server<br/>stdin/stdout JSON-RPC"]
-RAn["Analysis Engine"]
-RVFS["VFS"]
-RConf["Config"]
-end
-subgraph "Python Server"
-PServe["LSP Server (pygls)"]
-PAn["Analysis Engine"]
-PVFS["VFS"]
-PConf["Config"]
-end
-subgraph "Tools"
-CLI["CLI Mode"]
-DFA["DFA Tool"]
-MCP["MCP Server"]
-end
-Client["IDE / Editor"] --> RServe
-RServe --> RAn
-RAn --> RVFS
-RServe --> RConf
-Client --> PServe
-PServe --> PAn
-PAn --> PVFS
-PServe --> PConf
-RServe -. "CLI/DFA/MCP" .-> CLI
-RServe -. "CLI/DFA/MCP" .-> DFA
-RServe -. "CLI/DFA/MCP" .-> MCP
-```
+- Build command:
+  - cargo build --release
 
-**Diagram sources**
-- [src/main.rs](file://src/main.rs#L44-L59)
-- [src/lib.rs](file://src/lib.rs#L32-L47)
-- [src/config.rs](file://src/config.rs#L120-L139)
-- [python-port/README.md](file://python-port/README.md#L33-L77)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L60-L63)
-
-## Detailed Component Analysis
-
-### Rust Server: Build and Run
-- Build from source:
-  - Use cargo to build the release target
-- Run modes:
-  - LSP server over stdio (default)
-  - CLI mode for interactive testing and debugging
-- CLI usage:
-  - Start with --cli flag
-  - Look for initialization completion messages
-  - Use help to explore available commands
-
-Verification steps:
-- After build, run the server and confirm it starts
-- Switch to CLI mode and run a simple query to verify responsiveness
-
-**Section sources**
-- [README.md](file://README.md#L22-L31)
-- [CONTRIBUTING.md](file://CONTRIBUTING.md#L72-L130)
-- [src/main.rs](file://src/main.rs#L21-L60)
-
-### Python Port: Install and Run
-- Install from source:
-  - Use pip in editable mode for development
-  - Optional dev extras for testing and formatting
-- Run tools:
-  - dls for LSP server
-  - dfa for device file analyzer
-  - dml-mcp-server for AI-assisted development
-- CLI mode:
-  - Supports --cli and --compile-info for batch analysis
-
-Verification steps:
-- Confirm scripts are installed and runnable
-- Test CLI mode and inspect initialization messages
-
-**Section sources**
-- [python-port/README.md](file://python-port/README.md#L17-L77)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L60-L63)
-
-### Configuration: compile_commands.json
-Purpose:
-- Provide include paths and DMLC flags per module
-- Enable accurate import resolution and device analysis
-
-Format:
-- JSON mapping device file paths to include directories and DMLC flags
-
-Guidance:
-- Generated by CMake projects exporting compile commands
-- Hand-craft when necessary for small setups
-
-**Section sources**
-- [README.md](file://README.md#L36-L57)
-- [python-port/examples/compile_commands.json](file://python-port/examples/compile_commands.json#L1-L14)
-
-### Lint Configuration
-- Per-file inline configuration via comments
-- Global lint configuration files for rule sets and severity
-- Inline commands allow-file and allow for granular control
-
-**Section sources**
-- [USAGE.md](file://USAGE.md#L15-L48)
-- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-
-### IDE Integration: Setup Guides
-- VS Code:
-  - Use a generic LSP extension and point it to the dls command
-  - Configure file types for DML
-- Neovim:
-  - Use nvim-lspconfig to launch dls via stdio
-  - Set root detection to include compile_commands.json or .git
-- Emacs:
-  - Use lsp-mode to register a dml-ls connection
+This produces the dls binary in target/release/. You can run it directly or integrate it with your editor as an LSP server.
 
 Notes:
-- Ensure the DLS binary is discoverable on PATH
-- Send workspace/didChangeConfiguration when configuration changes
+- The project defines multiple binaries: dls (main LSP server), dfa (device file analyzer), and dml-mcp-server (MCP server).
+- The LSP server communicates over stdio using the Language Server Protocol.
 
 **Section sources**
-- [clients.md](file://clients.md#L20-L54)
-- [python-port/README.md](file://python-port/README.md#L126-L166)
+- [README.md](file://README.md#L22-L24)
+- [Cargo.toml](file://Cargo.toml#L18-L31)
+- [src/main.rs](file://src/main.rs#L15-L59)
 
-### Workflow: From Installation to First Integration
-1. Choose deployment:
-   - Rust server for production-grade performance
-   - Python port for rapid iteration and Python tooling
-2. Install prerequisites:
-   - Rust toolchain (for Rust server)
-   - Python 3.8+ (for Python port)
-3. Build or install:
-   - Rust: cargo build --release
-   - Python: pip install -e .
-4. Prepare compile_commands.json for your project
-5. Start the server:
-   - Rust: run the binary or cargo run --bin dls
-   - Python: run dls
-6. Configure your editor to connect to the server
-7. Open a DML 1.4 file and verify diagnostics and goto-definition
+## Basic Configuration
+The DLS accepts configuration via LSP initialization options and runtime configuration updates. The configuration object includes fields for linting, compile info, analysis behavior, and device context modes.
+
+Key configuration areas:
+- Linting enablement and configuration file path
+- Compile info file path for import resolution
+- Analysis retention duration and context modes
+- Debug logging level
+
+Configuration fields and defaults are defined in the configuration module. The LSP client should send workspace/didChangeConfiguration when settings change.
 
 **Section sources**
-- [README.md](file://README.md#L22-L31)
-- [python-port/README.md](file://python-port/README.md#L17-L41)
-- [python-port/examples/compile_commands.json](file://python-port/examples/compile_commands.json#L1-L14)
-- [clients.md](file://clients.md#L20-L54)
+- [src/config.rs](file://src/config.rs#L120-L227)
+- [clients.md](file://clients.md#L32-L38)
 
-## Dependency Analysis
-- Rust server dependencies include LSP types, JSON-RPC, async runtime, and parsing libraries
-- Python port dependencies include pygls, lsprotocol, click, pydantic, aiofiles, watchdog, and regex
-- Both expose the same tooling entry points (dls, dfa, dml-mcp-server)
+## Initial Usage
+There are two primary ways to use the DLS:
+- As an LSP server integrated into your editor
+- In command-line mode for interactive analysis
 
-```mermaid
-graph LR
-subgraph "Rust Dependencies"
-RJson["jsonrpc"]
-RLsp["lsp-types"]
-RTokio["tokio"]
-RRegex["regex"]
-end
-subgraph "Python Dependencies"
-PPygls["pygls"]
-PLsproto["lsprotocol"]
-PCli["click"]
-PPyd["pydantic"]
-PAio["aiofiles"]
-PReg["regex"]
-end
-RJson --> RLsp
-RLsp --> RTokio
-RTokio --> RRegex
-PPygls --> PLsproto
-PLsproto --> PCli
-PCli --> PPyd
-PPyd --> PAio
-PAio --> PReg
-```
+LSP server:
+- Start the dls binary; it listens on stdio for LSP messages.
+- Configure your editor to launch dls and point it at your DML project root.
 
-**Diagram sources**
-- [Cargo.toml](file://Cargo.toml#L33-L62)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L28-L42)
+Command-line mode:
+- Start dls with --cli to enter interactive mode.
+- Use commands like open, def, symbol, document, workspace, context-mode, contexts, set-contexts, wait, help, and quit.
+
+Interactive commands overview:
+- open <file>: Open a DML file to trigger initial analysis.
+- def <file> <row> <col>: Resolve go-to-definition at a position.
+- symbol <query>: Search workspace symbols.
+- document <file>: List document symbols.
+- workspace <dir...>: Add workspace folders.
+- context-mode <mode>: Set device context mode.
+- contexts <paths...>: Query known contexts.
+- set-contexts <paths...>: Activate specific contexts.
+- wait <ms>: Pause to let analysis complete.
+- help/quit: Show help or exit.
 
 **Section sources**
-- [Cargo.toml](file://Cargo.toml#L33-L62)
-- [python-port/pyproject.toml](file://python-port/pyproject.toml#L28-L42)
+- [src/main.rs](file://src/main.rs#L21-L59)
+- [src/cmd.rs](file://src/cmd.rs#L46-L140)
+- [src/cmd.rs](file://src/cmd.rs#L405-L443)
 
-## Performance Considerations
-- Rust server benefits from native performance and efficient concurrency
-- Python port offers easier development ergonomics and broader Python tooling
-- Choose Rust for large projects and tight feedback loops; choose Python for quick prototyping and CI-friendly workflows
+## DML Compile Commands File Format
+The DML compile commands file is a JSON document used to provide per-device import resolution and DMLC flags. It enables the server to locate included files and pass appropriate flags during analysis.
 
-[No sources needed since this section provides general guidance]
+Format:
+- Root object maps absolute device file paths to entries.
+- Each entry has:
+  - includes: Array of absolute include directory paths
+  - dmlc_flags: Array of flags passed to DMLC invocations
 
-## Troubleshooting Guide
-Common issues and resolutions:
-- Server fails to start:
-  - Verify PATH includes the installed binary
-  - Check logs and ensure compile_commands.json is valid
-- No diagnostics or imports unresolved:
-  - Confirm compile_commands.json includes the device file and correct include paths
-  - Ensure DML version is set to 1.4
-- LSP client disconnects:
-  - Ensure the client restarts the server on exit and handles crashes gracefully
-- Lint not applied:
-  - Verify lint configuration file path and rule sets
-  - Use inline directives for per-file overrides
+Typical generation:
+- Auto-generated by CMake when exporting compile commands. Set the environment variable to enable export before invoking CMake.
 
-Verification checklist:
-- Open a DML 1.4 example file and confirm diagnostics appear
-- Try goto-definition and find-references
-- Toggle linting and observe changes
-- Run CLI mode and verify initialization messages
+How it is used:
+- The server reads this file to augment include search paths and to apply device-specific flags for accurate import resolution and analysis.
 
 **Section sources**
 - [README.md](file://README.md#L36-L57)
-- [USAGE.md](file://USAGE.md#L15-L48)
-- [clients.md](file://clients.md#L39-L42)
-- [CONTRIBUTING.md](file://CONTRIBUTING.md#L109-L130)
 
-## Conclusion
-You now have the essentials to install, configure, and integrate the DML Language Server. Start with the Rust server for production use or the Python port for rapid iteration. Prepare compile_commands.json, configure your editor, and verify functionality with the example DML file and lint configuration.
+## Lint Configuration
+The DLS supports configurable linting with a JSON configuration file. You can enable/disable rules, adjust rule parameters, and annotate diagnostics with the rule name.
 
-[No sources needed since this section summarizes without analyzing specific files]
+Configuration file:
+- example_files/example_lint_cfg.json demonstrates a comprehensive set of rules and parameters.
+- example_files/example_lint_cfg.README explains how to structure the file and interpret defaults.
 
-## Appendices
+Inline lint control:
+- You can suppress specific rules for a file or a single line using in-line comments in DML files. Supported commands:
+  - allow-file=<rule>: Suppress a rule for the entire file.
+  - allow=<rule>: Suppress a rule for the next line without leading text, or for the current line if declared outside a leading comment.
 
-### Appendix A: Quick Start Checklist
-- Install Rust toolchain or Python 3.8+
-- Build or install DLS (Rust or Python)
-- Create compile_commands.json for your project
-- Configure your editor to launch the DLS
-- Open a DML 1.4 file and verify features
+Default behavior:
+- The server ships with a default lint configuration. If you do not specify a lint config file, the defaults are applied.
+
+Lint parsing and validation:
+- The server parses the lint configuration file and reports unknown fields.
+- It applies indentation and line-length settings consistently across the codebase.
 
 **Section sources**
-- [README.md](file://README.md#L22-L31)
-- [python-port/README.md](file://python-port/README.md#L17-L41)
-- [example_files/watchdog_timer.dml](file://example_files/watchdog_timer.dml#L7-L10)
+- [USAGE.md](file://USAGE.md#L87-L120)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L76)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L135-L184)
+- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L28)
+- [example_files/example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L32)
 
-### Appendix B: Example Files Reference
-- Example DML device file for testing
-- Example lint configuration for rule sets and severity
+## IDE Integration
+The DLS implements the Language Server Protocol and can be integrated into editors that support LSP. The repository provides guidance for implementing clients and lists required LSP messages and optional extensions.
+
+Steps:
+- Ensure your editor has LSP support or a library that implements LSP.
+- Launch the DLS binary and point your editor’s LSP client to it.
+- Send workspace/didChangeConfiguration when settings change.
+- Optionally, use the MCP server for AI-assisted development.
+
+Required LSP messages (selected):
+- Notifications: exit, initialized, textDocument/didOpen, textDocument/didChange, textDocument/didSave, workspace/didChangeConfiguration, workspace/didChangeWatchedFiles, cancel
+- Requests: shutdown, initialize, textDocument/definition, textDocument/declaration, textDocument/implementation, textDocument/references, textDocument/documentSymbol, textDocument/workspaceSymbol, workspace/symbol
+- Server-to-client: client/registerCapability, client/unregisterCapability, textDocument/publishDiagnostics, workspace/configuration (pull-style), window/progress
+
+Optional extensions:
+- $/changeActiveContexts and $/getKnownContexts for controlling active device contexts and semantic analysis scopes.
+
+Client implementation guidance:
+- Review the clients.md guide for detailed requirements and recommended client-side configuration.
+
+**Section sources**
+- [clients.md](file://clients.md#L63-L98)
+- [clients.md](file://clients.md#L99-L181)
+
+## Practical Examples
+Use the sample DML file and lint configuration to validate your setup.
+
+Sample DML file:
+- example_files/watchdog_timer.dml is a complete DML 1.4 device with banks, registers, and methods. Open this file in your editor to trigger diagnostics and symbol queries.
+
+Lint configuration:
+- example_files/example_lint_cfg.json provides a baseline configuration. Copy it to your project and adjust parameters as needed.
+- example_files/example_lint_cfg.README explains how to enable/disable rules and configure indentation and line length.
+
+Inline lint control:
+- Add in-line comments in DML files to temporarily suppress specific rules for demonstration or exceptional cases.
 
 **Section sources**
 - [example_files/watchdog_timer.dml](file://example_files/watchdog_timer.dml#L1-L146)
-- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
+- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L28)
+- [example_files/example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L32)
+- [USAGE.md](file://USAGE.md#L87-L120)
+
+## Verification and Testing
+Confirm successful installation and basic functionality:
+
+- Build verification:
+  - cargo build --release completes without errors and produces the dls binary.
+
+- LSP server verification:
+  - Start dls; it should accept LSP initialize and respond with capabilities.
+  - Open a DML file in your editor; expect diagnostics and symbol navigation to work.
+
+- Command-line mode verification:
+  - Run dls --cli to enter interactive mode.
+  - Use open <file> to load a DML file.
+  - Use def <file> <row> <col> to resolve definitions.
+  - Use symbol <query> and document <file> to explore symbols.
+  - Use context-mode, contexts, and set-contexts to manage device contexts.
+
+- Lint verification:
+  - Point the server to a lint configuration file via configuration.
+  - Confirm that lint warnings appear and that inline annotations suppress warnings as intended.
+
+- MCP server verification (optional):
+  - Build and run the MCP server using the MCP_SERVER_GUIDE.md instructions.
+  - Test tool listing and generation commands to validate AI-assisted development features.
+
+**Section sources**
+- [README.md](file://README.md#L22-L24)
+- [src/main.rs](file://src/main.rs#L21-L59)
+- [src/cmd.rs](file://src/cmd.rs#L46-L140)
+- [USAGE.md](file://USAGE.md#L87-L120)
+- [MCP_SERVER_GUIDE.md](file://MCP_SERVER_GUIDE.md#L9-L33)
+
+## Troubleshooting
+Common setup issues and resolutions:
+
+- Missing Rust toolchain:
+  - Ensure Rust (stable) is installed and up to date. Rebuild with cargo build --release.
+
+- Editor cannot connect to LSP:
+  - Verify the dls binary path in your editor’s LSP configuration.
+  - Ensure the editor sends workspace/didChangeConfiguration when settings change.
+
+- Diagnostics not appearing:
+  - Confirm the DML file declares dml 1.4.
+  - Ensure the compile commands file is present and correctly formatted.
+  - Check that include paths in the compile commands file point to actual directories.
+
+- Lint configuration not applied:
+  - Validate the lint configuration JSON syntax.
+  - Confirm the lint configuration file path is provided to the server via configuration.
+  - Use workspace/configuration or didChangeConfiguration to refresh settings.
+
+- Inline lint annotations not working:
+  - Ensure the comment syntax is exactly // dls-lint: <command>=<target>.
+  - Place the comment on its own line or immediately after the code line for allow behavior.
+
+- MCP server issues:
+  - Follow the MCP_SERVER_GUIDE.md steps to build and run the MCP server.
+  - Use the provided test commands to validate server capabilities and tool execution.
+
+**Section sources**
+- [USAGE.md](file://USAGE.md#L87-L120)
+- [clients.md](file://clients.md#L32-L38)
+- [MCP_SERVER_GUIDE.md](file://MCP_SERVER_GUIDE.md#L9-L33)
+
+## Conclusion
+You now have the essentials to install, configure, and use the DML Language Server. Start with cargo build --release, set up your compile commands and lint configuration, integrate with your editor via LSP, and verify functionality using the sample DML file. For advanced AI-assisted development, explore the MCP server as documented.
+
+**Section sources**
+- [README.md](file://README.md#L1-L57)
+- [USAGE.md](file://USAGE.md#L1-L120)
+- [MCP_SERVER_GUIDE.md](file://MCP_SERVER_GUIDE.md#L1-L280)

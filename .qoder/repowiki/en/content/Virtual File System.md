@@ -2,13 +2,13 @@
 
 <cite>
 **Referenced Files in This Document**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs)
-- [src/vfs/test.rs](file://src/vfs/test.rs)
-- [src/server/mod.rs](file://src/server/mod.rs)
-- [src/main.rs](file://src/main.rs)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py)
+- [mod.rs](file://src/vfs/mod.rs)
+- [test.rs](file://src/vfs/test.rs)
+- [mod.rs](file://src/span/mod.rs)
+- [analysis_queue.rs](file://src/actions/analysis_queue.rs)
+- [concurrency.rs](file://src/concurrency.rs)
+- [file_management.rs](file://src/file_management.rs)
+- [__init__.py](file://python-port/dml_language_server/vfs/__init__.py)
 </cite>
 
 ## Table of Contents
@@ -24,340 +24,539 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document explains the Virtual File System (VFS) implementation used by the DML Language Server. It covers caching strategies, change tracking, synchronization between in-memory representations and disk, multi-threaded operations with locking, file watching for external changes, and integration with the analysis engine for automatic re-analysis. It also documents file management APIs (read, write buffering, cache invalidation), examples of change propagation, performance optimizations for large projects, memory management considerations, edge cases (concurrent modifications, network file systems, large DML files), and the relationship between VFS and the broader analysis pipeline.
+This document describes the Virtual File System (VFS) used by the DML Language Server. It covers the VFS architecture, file operations abstraction, change tracking mechanisms, memory management and caching policies, file content synchronization, integration with the underlying filesystem, virtual file representation, incremental update handling, examples of file operations, change detection algorithms, performance optimization techniques, the relationship between VFS and the analysis engine, concurrent access patterns, thread safety considerations, and the testing framework for VFS operations.
 
 ## Project Structure
-The VFS is implemented in two complementary layers:
-- Rust-based VFS for the native server, providing thread-safe in-memory caching, change coalescing, and disk I/O abstraction.
-- Python-based VFS for the LSP server, providing asynchronous file watching, caching, and integration with the analysis engine.
+The VFS is implemented in Rust under src/vfs and includes:
+- A public API surface (Vfs) that wraps an internal implementation (VfsInternal)
+- A file abstraction supporting text and binary content
+- Change tracking via a Change enumeration and coalesced updates
+- Span-based text positioning and byte-offset calculations for UTF-8 and UTF-16
+- A file loader trait abstracting disk I/O
+- A comprehensive test suite validating change application, caching, and user data semantics
+
+Additionally, there is a Python port of the VFS in python-port/dml_language_server/vfs that demonstrates asynchronous file watching and caching behavior.
 
 ```mermaid
 graph TB
-subgraph "Rust Server"
-RS_main["src/main.rs<br/>Entry point"]
-RS_server["src/server/mod.rs<br/>LSP server loop"]
-RS_vfs["src/vfs/mod.rs<br/>VFS core"]
+subgraph "Rust VFS"
+A["Vfs<U>"] --> B["VfsInternal<T,U>"]
+B --> C["FileLoader trait"]
+C --> D["RealFileLoader"]
+B --> E["FileKind (Text/Binary)"]
+E --> F["TextFile (String + line_indices)"]
+B --> G["Change (AddFile/ReplaceText)"]
+B --> H["VfsSpan (USV/UTF-16)"]
 end
-subgraph "Python Server"
-PY_main["python-port/dml_language_server/main.py<br/>Entry point"]
-PY_server["python-port/dml_language_server/server/__init__.py<br/>LSP server"]
-PY_vfs["python-port/dml_language_server/vfs/__init__.py<br/>VFS + Watcher"]
-PY_fm["python-port/dml_language_server/file_management.py<br/>FileManager"]
+subgraph "Python VFS"
+P["VFS (async)"] --> Q["RealFileLoader (async)"]
+P --> R["MemoryFileLoader"]
+P --> S["FileSystemWatcher (async)"]
 end
-RS_main --> RS_server
-RS_server --> RS_vfs
-PY_main --> PY_server
-PY_server --> PY_vfs
-PY_server --> PY_fm
 ```
 
 **Diagram sources**
-- [src/main.rs](file://src/main.rs#L56-L58)
-- [src/server/mod.rs](file://src/server/mod.rs#L68-L84)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L29-L288)
-- [python-port/dml_language_server/main.py](file://python-port/dml_language_server/main.py#L82-L83)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L49-L69)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L33-L387)
+- [mod.rs](file://src/vfs/mod.rs#L29-L288)
+- [mod.rs](file://src/vfs/mod.rs#L293-L297)
+- [mod.rs](file://src/vfs/mod.rs#L895-L952)
+- [__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
 
 **Section sources**
-- [src/main.rs](file://src/main.rs#L56-L58)
-- [src/server/mod.rs](file://src/server/mod.rs#L68-L84)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L29-L288)
-- [python-port/dml_language_server/main.py](file://python-port/dml_language_server/main.py#L82-L83)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L49-L69)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L33-L387)
+- [mod.rs](file://src/vfs/mod.rs#L1-L100)
+- [__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L1-L50)
 
 ## Core Components
-- Rust VFS
-  - Public API: creation, file loading/saving, change recording, user data attachment, cache inspection, flushing, and synchronization checks.
-  - Internals: per-file in-memory representation, line index cache, change coalescing, and thread coordination via mutexes and parking.
-  - Disk I/O abstraction via a trait with a real file loader.
-- Python VFS
-  - Asynchronous file caching with dirty-set tracking.
-  - File watcher using watchdog to detect external changes and propagate them to the server.
-  - Integration hooks for callbacks and continuous change processing.
+- Vfs and VfsInternal: Public and internal APIs for file caching, change application, and synchronization.
+- File and FileKind: Virtual file representation supporting text and binary content.
+- TextFile: In-memory text file with line indices for efficient random access.
+- Change: Enumeration representing file additions and text replacements.
+- VfsSpan: Span abstraction supporting Unicode scalar values and UTF-16 code units with precise byte offset calculation.
+- FileLoader trait and RealFileLoader: Abstraction for reading/writing files from disk.
+- Error: Comprehensive error model covering IO, out-of-sync conditions, bad locations, and internal errors.
 
-Key responsibilities:
-- Provide fast in-memory access to DML files.
-- Track and apply incremental edits safely.
-- Keep disk in sync when requested.
-- Notify the analysis engine of external changes to re-analyze affected files.
+Key capabilities:
+- Incremental text editing with coalesced changes
+- Line-indexed random access for fast line and range reads
+- UTF-8 and UTF-16 aware byte offset translation
+- Dirty tracking and explicit save semantics
+- User data attached to files for analysis engine integration
 
 **Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L180-L288)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L293-L603)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L895-L952)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
+- [mod.rs](file://src/vfs/mod.rs#L29-L288)
+- [mod.rs](file://src/vfs/mod.rs#L625-L666)
+- [mod.rs](file://src/vfs/mod.rs#L655-L666)
+- [mod.rs](file://src/vfs/mod.rs#L84-L98)
+- [mod.rs](file://src/vfs/mod.rs#L44-L85)
+- [mod.rs](file://src/vfs/mod.rs#L895-L952)
 
 ## Architecture Overview
-The VFS sits at the intersection of the LSP server and the analysis engine. Rust VFS is used by the native server; Python VFS is used by the LSP server. Both provide:
-- In-memory caching with dirty tracking.
-- Change recording and coalescing.
-- External change detection and propagation.
-- Integration with analysis and linting.
-
-```mermaid
-sequenceDiagram
-participant Client as "Editor"
-participant PyServer as "Python LSP Server"
-participant PyVFS as "Python VFS"
-participant Watcher as "File Watcher"
-participant Analysis as "Analysis Engine"
-Client->>PyServer : "didOpen/didChange/didSave"
-PyServer->>PyVFS : "write_file()/save_file()"
-PyVFS-->>PyServer : "cache updated"
-Note over PyServer,Analysis : "On didSave, persist to disk"
-Watcher-->>PyVFS : "FileChange(modified/deleted)"
-PyVFS-->>PyServer : "callback(change)"
-PyServer->>Analysis : "invalidate_file() and re-analyze"
-```
-
-**Diagram sources**
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L122-L174)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L344-L363)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L92-L121)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L280-L304)
-
-## Detailed Component Analysis
-
-### Rust VFS: In-memory model and change tracking
-- Data model
-  - Per-file storage: text content, line indices, and a changed flag.
-  - Line indices enable O(1) random access to lines and efficient slicing.
-  - User data attached per file for analysis metadata.
-- Change tracking
-  - Changes are recorded as additions or replacements with spans.
-  - Coalescing groups all changes per file and applies them in-order.
-  - After applying changes, line indices are recomputed and the changed flag is set.
-- Synchronization and locking
-  - Two mutex-protected maps: cached files and pending writers.
-  - A strict lock ordering: pending_files first, then files.
-  - Threads waiting for a file to finish loading are parked and unparked when ready.
-- Disk I/O
-  - RealFileLoader reads/writes UTF-8 text or falls back to binary bytes.
-  - Writing clears the changed flag and persists to disk.
+The VFS architecture separates concerns between:
+- Virtual file representation and caching
+- Change application and coalescing
+- Span-based text positioning and byte offset translation
+- File loading and writing abstractions
+- Integration with the analysis engine and concurrency primitives
 
 ```mermaid
 classDiagram
 class Vfs~U~ {
 +new() Vfs
++on_changes(changes) Result
 +load_file(path) Result
 +snapshot_file(path) Result
-+on_changes(changes) Result
++load_line(path,row) Result
++load_lines(path,row_start,row_end) Result
++load_span(span) Result
 +write_file(path) Result
 +flush_file(path) Result
 +file_saved(path) Result
-+set_user_data(path, data) Result
-+with_user_data(path, f) Result
-+ensure_user_data(path, f) Result
++set_user_data(path,data) Result
++with_user_data(path,f) Result
++ensure_user_data(path,f) Result
++clear() void
 }
 class VfsInternal~T,U~ {
--files : Mutex<HashMap>
--pending_files : Mutex<HashMap>
-+ensure_file(path, f)
-+on_changes(changes)
-+write_file(path)
-+flush_file(path)
+-files : Mutex<HashMap<PathBuf,File<U>>>
+-pending_files : Mutex<HashMap<PathBuf,Vec<Thread>>>
++on_changes(changes) Result
++load_file(path) Result
++write_file(path) Result
++flush_file(path) Result
++file_saved(path) Result
++set_user_data(path,data) Result
++with_user_data(path,f) Result
++ensure_user_data(path,f) Result
++clear() void
+}
+class FileLoader {
+<<trait>>
++read(file_name) Result
++write(file_name,file_kind) Result
+}
+class RealFileLoader {
++read(file_name) Result
++write(file_name,file_kind) Result
 }
 class File~U~ {
 -kind : FileKind
 -user_data : Option<U>
-+make_change(changes)
-+load_line(line)
-+load_lines(start,end)
-+load_range(range)
++contents() FileContents
++make_change(changes) Result
++load_line(row) Result
++load_lines(row_start,row_end) Result
++load_range(range) Result
++changed() bool
+}
+class FileKind {
+<<enum>>
+Text(TextFile)
+Binary(Vec<u8>)
+}
+class TextFile {
++text : String
++line_indices : Vec<u32>
++changed : bool
++make_change(changes) Result
++load_line(row) Result
++load_lines(row_start,row_end) Result
++load_range(range) Result
++for_each_line(f) Result
+}
+class Change {
+<<enum>>
+AddFile(file,text)
+ReplaceText(span,text)
+}
+class VfsSpan {
+<<enum>>
+UnicodeScalarValue(SpanData)
+Utf16CodeUnit(SpanData)
+}
+Vfs <|.. VfsInternal
+VfsInternal --> FileLoader
+FileLoader <|.. RealFileLoader
+VfsInternal --> File
+File --> FileKind
+FileKind --> TextFile
+VfsInternal --> Change
+VfsInternal --> VfsSpan
+```
+
+**Diagram sources**
+- [mod.rs](file://src/vfs/mod.rs#L29-L288)
+- [mod.rs](file://src/vfs/mod.rs#L293-L297)
+- [mod.rs](file://src/vfs/mod.rs#L895-L952)
+- [mod.rs](file://src/vfs/mod.rs#L625-L666)
+- [mod.rs](file://src/vfs/mod.rs#L655-L666)
+- [mod.rs](file://src/vfs/mod.rs#L84-L98)
+- [mod.rs](file://src/vfs/mod.rs#L44-L85)
+
+## Detailed Component Analysis
+
+### VFS API Surface and Operations
+- Creation and lifecycle:
+  - Vfs::new creates an empty VFS backed by RealFileLoader.
+  - Vfs::clear clears all cached files and awakens pending threads.
+- File operations:
+  - Vfs::load_file loads a file into memory if not cached.
+  - Vfs::snapshot_file returns a copy of the in-memory TextFile.
+  - Vfs::load_line, Vfs::load_lines, Vfs::load_span provide targeted reads.
+  - Vfs::write_file persists changes to disk and marks the file clean.
+  - Vfs::flush_file removes a file from cache and awakens pending threads.
+  - Vfs::file_saved marks a file as saved to disk (clean).
+  - Vfs::file_is_synced checks whether a file is clean.
+- Change application:
+  - Vfs::on_changes accepts a slice of Change and applies them atomically per file.
+  - Changes are coalesced by file to preserve ordering and minimize redundant work.
+- User data:
+  - Vfs::set_user_data attaches arbitrary data to a file.
+  - Vfs::with_user_data reads or computes user data for a file.
+  - Vfs::ensure_user_data lazily initializes user data if absent.
+
+```mermaid
+sequenceDiagram
+participant Client as "Client"
+participant VFS as "Vfs"
+participant Internal as "VfsInternal"
+participant Loader as "RealFileLoader"
+participant FS as "Filesystem"
+Client->>VFS : on_changes(changes)
+VFS->>Internal : on_changes(changes)
+Internal->>Internal : coalesce_changes(changes)
+loop for each file
+Internal->>Internal : ensure_file(path)
+alt file not cached
+Internal->>Loader : read(path)
+Loader->>FS : open/read
+FS-->>Loader : bytes
+Loader-->>Internal : File
+Internal->>Internal : insert into files
+end
+Internal->>Internal : apply changes to TextFile
+end
+Internal-->>VFS : Ok(())
+VFS-->>Client : Ok(())
+```
+
+**Diagram sources**
+- [mod.rs](file://src/vfs/mod.rs#L354-L379)
+- [mod.rs](file://src/vfs/mod.rs#L468-L512)
+- [mod.rs](file://src/vfs/mod.rs#L902-L932)
+
+**Section sources**
+- [mod.rs](file://src/vfs/mod.rs#L180-L288)
+- [mod.rs](file://src/vfs/mod.rs#L354-L379)
+- [mod.rs](file://src/vfs/mod.rs#L468-L512)
+
+### Change Tracking and Coalescing
+- Change enumeration supports AddFile and ReplaceText.
+- Coalescing groups changes by file and preserves order.
+- ReplaceText uses VfsSpan to compute byte offsets for UTF-8 or UTF-16.
+- After applying changes, TextFile updates its line indices and marks itself changed.
+
+```mermaid
+flowchart TD
+Start(["on_changes(changes)"]) --> Group["Group changes by file"]
+Group --> LoopFiles{"For each file"}
+LoopFiles --> Apply["Apply changes in order"]
+Apply --> UpdateIndices["Update line_indices"]
+UpdateIndices --> MarkChanged["Mark file changed"]
+MarkChanged --> LoopFiles
+LoopFiles --> |Done| End(["Return Ok"])
+```
+
+**Diagram sources**
+- [mod.rs](file://src/vfs/mod.rs#L605-L612)
+- [mod.rs](file://src/vfs/mod.rs#L732-L777)
+- [mod.rs](file://src/vfs/mod.rs#L771-L773)
+
+**Section sources**
+- [mod.rs](file://src/vfs/mod.rs#L84-L98)
+- [mod.rs](file://src/vfs/mod.rs#L605-L612)
+- [mod.rs](file://src/vfs/mod.rs#L732-L777)
+
+### Span-Based Positioning and Byte Offset Translation
+- VfsSpan supports Unicode scalar values and UTF-16 code units.
+- byte_in_str converts a Unicode scalar offset to a UTF-8 byte offset.
+- byte_in_str_utf16 converts a UTF-16 code unit offset to a UTF-8 byte offset with strict boundary checks.
+- These utilities enable precise replacement ranges for editors that may not compute row/col end points reliably.
+
+```mermaid
+flowchart TD
+A["VfsSpan::byte_in_str(str,col)"] --> B{"VfsSpan kind?"}
+B --> |UnicodeScalarValue| C["Iterate chars<br/>return byte offset"]
+B --> |Utf16CodeUnit| D["Iterate chars<br/>track UTF-16 units<br/>return byte offset"]
+C --> E["OK(byte)"]
+D --> E
+C --> |error| F["InternalError"]
+D --> |error| F
+```
+
+**Diagram sources**
+- [mod.rs](file://src/vfs/mod.rs#L64-L85)
+- [mod.rs](file://src/vfs/mod.rs#L864-L874)
+- [mod.rs](file://src/vfs/mod.rs#L877-L893)
+
+**Section sources**
+- [mod.rs](file://src/vfs/mod.rs#L44-L85)
+- [mod.rs](file://src/vfs/mod.rs#L864-L893)
+
+### File Representation and Caching
+- FileKind encapsulates either TextFile or Binary(Vec<u8>).
+- TextFile stores the entire content as a String plus precomputed line indices for O(1) line access.
+- VfsInternal caches files in a HashMap protected by a Mutex; pending_files coordinates concurrent readers/writers.
+- ensure_file handles lazy loading and wakes waiting threads upon completion.
+
+```mermaid
+classDiagram
+class File~U~ {
+-kind : FileKind
+-user_data : Option<U>
++contents() FileContents
++make_change(changes) Result
++load_line(row) Result
++load_lines(row_start,row_end) Result
++load_range(range) Result
 +changed() bool
 }
 class TextFile {
 +text : String
 +line_indices : Vec<u32>
 +changed : bool
-+make_change(changes)
-+load_line(line)
-+load_lines(start,end)
-+load_range(range)
++make_change(changes) Result
++load_line(row) Result
++load_lines(row_start,row_end) Result
++load_range(range) Result
++for_each_line(f) Result
 }
-class RealFileLoader {
-+read(path) -> File
-+write(path, file_kind) -> ()
+class FileKind {
+<<enum>>
+Text(TextFile)
+Binary(Vec<u8>)
 }
-Vfs <|.. VfsInternal
-VfsInternal --> File : "stores"
-File --> TextFile : "holds"
-VfsInternal --> RealFileLoader : "uses"
+File --> FileKind
+FileKind --> TextFile
 ```
 
 **Diagram sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L29-L288)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L293-L603)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L663-L729)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L655-L661)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L900-L952)
+- [mod.rs](file://src/vfs/mod.rs#L625-L666)
+- [mod.rs](file://src/vfs/mod.rs#L655-L666)
+- [mod.rs](file://src/vfs/mod.rs#L631-L638)
 
 **Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L614-L623)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L731-L777)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L354-L379)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L468-L512)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L514-L530)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L900-L952)
+- [mod.rs](file://src/vfs/mod.rs#L625-L666)
+- [mod.rs](file://src/vfs/mod.rs#L655-L666)
+- [mod.rs](file://src/vfs/mod.rs#L468-L512)
 
-### Rust VFS: Multi-threading and file watching
-- Locking and parking
-  - Pending writers are tracked per path; readers park while writers hold the lock.
-  - Ensures safe concurrent reads and writes without data races.
-- File watching
-  - The Rust VFS does not include a file watcher; external watchers (e.g., OS-level) should invalidate caches and trigger re-analysis in the server.
-
-**Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L290-L297)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L331-L344)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L472-L512)
-
-### Python VFS: Caching, change propagation, and integration
-- Caching
-  - In-memory file cache with a dirty set to track unsaved changes.
-  - Reads first check cache; otherwise load from disk and update cache.
-- Change propagation
-  - File watcher detects created/modified/deleted events for DML files.
-  - On change, cache is invalidated and callbacks notify the server.
-- Integration with analysis
-  - Server registers a change callback; on external changes, it invalidates analysis and re-analyzes affected open documents.
+### File Loading and Writing Abstractions
+- FileLoader trait abstracts reading and writing files.
+- RealFileLoader reads UTF-8 text when possible, otherwise treats content as binary.
+- write_file persists TextFile content to disk and clears the changed flag.
 
 ```mermaid
 sequenceDiagram
-participant FS as "File System"
-participant Watcher as "Python Watcher"
-participant VFS as "Python VFS"
-participant Server as "Python LSP Server"
-participant FM as "FileManager"
-FS-->>Watcher : "File modified/deleted"
-Watcher->>VFS : "Enqueue FileChange"
-VFS-->>Server : "callback(change)"
-Server->>FM : "invalidate_file(path)"
-FM-->>Server : "Set of affected files"
-Server->>Server : "Re-analyze affected open docs"
+participant VFS as "Vfs"
+participant Internal as "VfsInternal"
+participant Loader as "RealFileLoader"
+participant FS as "Filesystem"
+VFS->>Internal : write_file(path)
+Internal->>Internal : get file and mark changed=false
+Internal->>Loader : write(path, file_kind)
+Loader->>FS : create/write_all
+FS-->>Loader : ok
+Loader-->>Internal : Ok(())
+Internal-->>VFS : Ok(())
 ```
 
 **Diagram sources**
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L92-L121)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L280-L304)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L344-L363)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L305-L334)
+- [mod.rs](file://src/vfs/mod.rs#L514-L529)
+- [mod.rs](file://src/vfs/mod.rs#L934-L951)
 
 **Section sources**
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L135-L164)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L178-L198)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L240-L270)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L280-L304)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L344-L363)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L305-L334)
+- [mod.rs](file://src/vfs/mod.rs#L895-L952)
+- [mod.rs](file://src/vfs/mod.rs#L514-L529)
 
-### API surface and usage patterns
-- Rust VFS APIs
-  - Creation: Vfs::new().
-  - Read: load_file, load_line, load_lines, load_span, for_each_line, snapshot_file.
-  - Write: on_changes (applies edits), write_file (persists), file_saved (marks synced), flush_file (removes from cache).
-  - Cache inspection: get_cached_files, get_changes, has_changes, file_is_synced.
-  - User data: set_user_data, with_user_data, ensure_user_data.
-- Python VFS APIs
-  - read_file, write_file, save_file, remove_file, file_exists, is_dirty, get_dirty_files.
-  - watch_directory, stop_watching, add_change_callback, process_changes, clear_cache, get_cache_stats.
+### Integration with the Analysis Engine and Concurrency
+- The analysis queue uses Vfs to access file contents during analysis.
+- Concurrency primitives (Jobs, JobToken) coordinate long-running tasks and ensure determinism in tests.
+- Vfs ensures thread-safe access to cached files and pending operations.
+
+```mermaid
+graph TB
+AQ["AnalysisQueue"] --> VFS["Vfs"]
+VFS --> Files["Cached Files"]
+AQ --> Jobs["Jobs/JobToken"]
+Jobs --> Threads["Worker Threads"]
+```
+
+**Diagram sources**
+- [analysis_queue.rs](file://src/actions/analysis_queue.rs#L28-L29)
+- [concurrency.rs](file://src/concurrency.rs#L71-L122)
 
 **Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L180-L288)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L135-L318)
+- [analysis_queue.rs](file://src/actions/analysis_queue.rs#L28-L29)
+- [concurrency.rs](file://src/concurrency.rs#L71-L122)
+
+### Python Port: Asynchronous File Watching and Caching
+The Python VFS provides an async implementation with:
+- RealFileLoader and MemoryFileLoader for disk and in-memory content
+- FileSystemWatcher for detecting file system changes
+- Async read/write/save operations with dirty tracking and cache invalidation
+
+```mermaid
+classDiagram
+class VFS {
++read_file(path) str
++write_file(path,content) void
++save_file(path) void
++remove_file(path) void
++file_exists(path) bool
++is_dirty(path) bool
++get_dirty_files() set
++watch_directory(dir) void
++stop_watching() void
++add_change_callback(cb) void
++process_changes() void
++clear_cache() void
++get_cache_stats() dict
+}
+class RealFileLoader {
++load_file(path) str
++exists(path) bool
+}
+class MemoryFileLoader {
++load_file(path) str
++exists(path) bool
++set_file(path,content) void
++remove_file(path) void
+}
+class FileSystemWatcher {
++on_modified(event) void
++on_created(event) void
++on_deleted(event) void
++get_change() FileChange
+}
+VFS --> RealFileLoader
+VFS --> MemoryFileLoader
+VFS --> FileSystemWatcher
+```
+
+**Diagram sources**
+- [__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
+
+**Section sources**
+- [__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
 
 ## Dependency Analysis
-- Rust server bootstraps VFS and passes it to the LSP server loop.
-- Python server constructs VFS and FileManager, wires file watching, and integrates with analysis/lint engines.
-- Tests exercise change coalescing, user data lifecycle, and write behavior.
+- Vfs depends on span for position and range types.
+- VfsInternal uses Mutex-protected maps for files and pending_files.
+- RealFileLoader depends on std::fs for I/O.
+- The analysis queue imports Vfs for file access.
+- Concurrency utilities provide job management and thread-safety guarantees.
 
 ```mermaid
 graph LR
-Main["src/main.rs"] --> Server["src/server/mod.rs"]
-Server --> VFS_R["src/vfs/mod.rs"]
-PyMain["python-port/dml_language_server/main.py"] --> PyServer["python-port/dml_language_server/server/__init__.py"]
-PyServer --> PyVFS["python-port/dml_language_server/vfs/__init__.py"]
-PyServer --> PyFM["python-port/dml_language_server/file_management.py"]
+VFS["Vfs/VfsInternal"] --> SPAN["span::Span/Range"]
+VFS --> LOADER["RealFileLoader"]
+LOADER --> FS["std::fs"]
+AQ["AnalysisQueue"] --> VFS
+CONC["Jobs/JobToken"] --> AQ
 ```
 
 **Diagram sources**
-- [src/main.rs](file://src/main.rs#L56-L58)
-- [src/server/mod.rs](file://src/server/mod.rs#L68-L84)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L29-L288)
-- [python-port/dml_language_server/main.py](file://python-port/dml_language_server/main.py#L82-L83)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L49-L69)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L123-L329)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L33-L387)
+- [mod.rs](file://src/vfs/mod.rs#L1-L15)
+- [mod.rs](file://src/vfs/mod.rs#L895-L952)
+- [analysis_queue.rs](file://src/actions/analysis_queue.rs#L28-L29)
+- [concurrency.rs](file://src/concurrency.rs#L71-L122)
 
 **Section sources**
-- [src/main.rs](file://src/main.rs#L56-L58)
-- [src/server/mod.rs](file://src/server/mod.rs#L68-L84)
-- [src/vfs/test.rs](file://src/vfs/test.rs#L106-L172)
+- [mod.rs](file://src/vfs/mod.rs#L1-L15)
+- [analysis_queue.rs](file://src/actions/analysis_queue.rs#L28-L29)
+- [concurrency.rs](file://src/concurrency.rs#L71-L122)
 
 ## Performance Considerations
-- In-memory representation
-  - TextFile stores line indices to avoid repeated scanning; this enables O(1) line access and efficient slicing.
-- Change coalescing
-  - Multiple edits are grouped per file and applied in-order, minimizing redundant computations.
-- Locking strategy
-  - Strict lock ordering prevents deadlocks and reduces contention.
-  - Readers park while writers hold locks, avoiding busy-wait loops.
-- Asynchronous file watching (Python)
-  - Uses an async queue and background task to process file changes without blocking the main server loop.
-- Large DML files
-  - Prefer incremental edits and avoid frequent full reloads.
-  - Use line-based APIs to minimize string copies.
-- Dirty tracking
-  - Only dirty files are persisted to reduce I/O overhead.
+- Memory management:
+  - TextFile stores entire content as String; line_indices enable O(1) line access.
+  - User data is stored per file and cleared on flush/change to reduce memory footprint.
+- Caching policy:
+  - Lazy loading via ensure_file prevents unnecessary disk I/O.
+  - Pending_files coordination avoids race conditions without blocking writes.
+- Change application:
+  - Coalescing reduces redundant work and preserves editor intent.
+  - UTF-8/UTF-16 conversions are performed only when needed.
+- I/O efficiency:
+  - RealFileLoader reads entire files into memory; consider streaming for very large files.
+  - write_file writes entire content; consider incremental writes for large files.
+- Concurrency:
+  - Mutex-protected maps ensure thread safety; consider reader-writer locks for high-read scenarios.
+  - Pending_files uses parking/unparking to avoid busy-waiting.
 
 [No sources needed since this section provides general guidance]
 
 ## Troubleshooting Guide
 Common issues and resolutions:
-- File not cached
-  - Ensure the file was loaded via VFS before attempting operations.
-- Out-of-sync errors
-  - Call file_saved after persisting to disk; otherwise, subsequent writes may be blocked.
-- Uncommitted changes
-  - Persist changes via write_file/save_file before expecting synced state.
-- Bad location or span
-  - Verify row/column indices and lengths; spans must be within file bounds.
-- External changes not reflected
-  - Ensure file watching is active and callbacks are registered to invalidate caches and re-analyze.
+- BadLocation: Occurs when accessing invalid rows/columns or UTF-16 offsets not at char boundaries.
+- FileNotCached: Attempting operations on files not present in cache; use load_file first.
+- NoUserDataForFile: Accessing user data that was cleared after changes or flush.
+- BadFileKind: Performing text operations on binary files.
+- OutOfSync/UncommittedChanges: Disk content differs from VFS or unsaved changes exist.
+
+Debugging tips:
+- Enable tracing logs around change application and file loading.
+- Verify VfsSpan selection (USV vs UTF-16) matches editor capabilities.
+- Use Vfs::get_cached_files and Vfs::get_changes to inspect state.
+- Validate UTF-8/UTF-16 conversions with unit tests.
 
 **Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L110-L128)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L321-L330)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L514-L530)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L240-L270)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L344-L363)
+- [mod.rs](file://src/vfs/mod.rs#L110-L128)
+- [test.rs](file://src/vfs/test.rs#L80-L103)
+- [test.rs](file://src/vfs/test.rs#L174-L281)
 
 ## Conclusion
-The VFS provides a robust foundation for fast, reliable file access and change management across the DML Language Server. The Rust implementation offers strong concurrency guarantees and efficient in-memory operations, while the Python implementation adds asynchronous file watching and seamless integration with the analysis pipeline. Together, they ensure accurate, timely re-analysis when files change, whether edited in the editor or externally.
+The VFS provides a robust abstraction for managing file content in the DML Language Server. It supports incremental updates, precise text positioning, and thread-safe caching. Its integration with the analysis engine and concurrency utilities enables scalable and reliable language server functionality. The Python port demonstrates complementary async patterns for file watching and caching.
 
 [No sources needed since this section summarizes without analyzing specific files]
 
 ## Appendices
 
-### Example: Applying edits and saving
-- Apply edits via on_changes (Rust) or write_file (Python).
-- Persist via write_file/save_file.
-- Mark synced via file_saved (Rust) or rely on successful save (Python).
+### Example Workflows
+
+- Applying multiple edits to a file:
+  - Group edits by file and apply in order; VfsSpan supports both USV and UTF-16 modes.
+  - Use Vfs::on_changes to record changes and Vfs::write_file to persist.
+
+- Reading specific lines or ranges:
+  - Use Vfs::load_line, Vfs::load_lines, or Vfs::load_span for targeted reads.
+  - Ensure VfsSpan uses the correct unit depending on editor capabilities.
+
+- Managing user data:
+  - Attach analysis metadata via Vfs::set_user_data or lazily initialize with Vfs::ensure_user_data.
+  - Clear user data automatically on flush or change recording.
 
 **Section sources**
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L203-L205)
-- [src/vfs/mod.rs](file://src/vfs/mod.rs#L514-L530)
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L165-L198)
+- [mod.rs](file://src/vfs/mod.rs#L202-L205)
+- [mod.rs](file://src/vfs/mod.rs#L233-L252)
+- [mod.rs](file://src/vfs/mod.rs#L265-L283)
+- [test.rs](file://src/vfs/test.rs#L174-L281)
 
-### Example: External change propagation
-- Watch directory and enqueue changes.
-- Invalidate analysis cache and re-analyze affected open documents.
+### Testing Framework for VFS Operations
+- Unit tests validate:
+  - Change application with and without explicit lengths
+  - Cache population and flushing
+  - Dirty tracking and saving
+  - User data lifecycle and clearing
+  - UTF-8 and UTF-16 boundary handling
+
+- Test coverage includes:
+  - Has-changes semantics
+  - Multi-file change scenarios
+  - Add-file operations
+  - User data read/write/compute/clear flows
+  - Wide character handling
 
 **Section sources**
-- [python-port/dml_language_server/vfs/__init__.py](file://python-port/dml_language_server/vfs/__init__.py#L240-L270)
-- [python-port/dml_language_server/server/__init__.py](file://python-port/dml_language_server/server/__init__.py#L344-L363)
-- [python-port/dml_language_server/file_management.py](file://python-port/dml_language_server/file_management.py#L305-L334)
+- [test.rs](file://src/vfs/test.rs#L81-L103)
+- [test.rs](file://src/vfs/test.rs#L105-L125)
+- [test.rs](file://src/vfs/test.rs#L127-L172)
+- [test.rs](file://src/vfs/test.rs#L174-L281)
+- [test.rs](file://src/vfs/test.rs#L314-L358)

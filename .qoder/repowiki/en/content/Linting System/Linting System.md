@@ -2,17 +2,19 @@
 
 <cite>
 **Referenced Files in This Document**
-- [mod.rs](file://src/lint/mod.rs)
-- [rules/mod.rs](file://src/lint/rules/mod.rs)
-- [rules/spacing.rs](file://src/lint/rules/spacing.rs)
-- [rules/indentation.rs](file://src/lint/rules/indentation.rs)
-- [README.md](file://src/lint/README.md)
-- [features.md](file://src/lint/features.md)
-- [example_lint_cfg.json](file://example_files/example_lint_cfg.json)
-- [example_lint_cfg.README](file://example_files/example_lint_cfg.README)
-- [tests/common.rs](file://src/lint/rules/tests/common.rs)
-- [tests/spacing/sp_braces.rs](file://src/lint/rules/tests/spacing/sp_braces.rs)
-- [tests/indentation/code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs)
+- [src/lint/mod.rs](file://src/lint/mod.rs)
+- [src/lint/features.md](file://src/lint/features.md)
+- [src/lint/README.md](file://src/lint/README.md)
+- [src/lint/rule categories](file://src/lint/rule categories)
+- [src/lint/rule categories/spacing.rs](file://src/lint/rule categories/spacing.rs)
+- [src/lint/rule categories/indentation.rs](file://src/lint/rule categories/indentation.rs)
+- [src/lint/rule categories/linelength.rs](file://src/lint/rule categories/linelength.rs)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs)
+- [src/lint/rules/tests/common.rs](file://src/lint/rules/tests/common.rs)
+- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json)
+- [example_files/example_lint_cfg.README](file://example_files/example_lint_cfg.README)
+- [python-port/dml_language_server/lint/__init__.py](file://python-port/dml_language_server/lint/__init__.py)
+- [python-port/dml_language_server/lint/rules/__init__.py](file://python-port/dml_language_server/lint/rules/__init__.py)
 </cite>
 
 ## Table of Contents
@@ -28,341 +30,415 @@
 10. [Appendices](#appendices)
 
 ## Introduction
-This document describes the configurable linting system for the DML language server. It explains the pluggable rule architecture, configuration management, per-file/per-line annotations, and integration with the analysis engine for real-time feedback. It also covers rule categories (spacing, indentation, line length), rule parameters, configuration file format, and practical guidance for extending and debugging rules.
+This document describes the linting system used by the DML Language Server. It explains the pluggable linting architecture, rule categories (spacing, indentation, line length), configuration management, the lint rule execution engine, error reporting, customizable severity levels, rule development and testing, performance optimization, and integration into development workflows. It also covers the lint configuration file format and runtime settings, and how linting relates to code quality enforcement and CI/IDE integration.
 
 ## Project Structure
-The linting subsystem is implemented in Rust under src/lint and src/lint/rules. Key areas:
-- Lint orchestration and configuration parsing live in src/lint/mod.rs.
-- Rule categories are split into spacing and indentation under src/lint/rules/.
-- Rule metadata and types are defined in src/lint/rules/mod.rs.
-- Documentation and feature lists are in src/lint/README.md and src/lint/features.md.
-- Example configuration and usage guidance are in example_files/example_lint_cfg.*.
-- Tests demonstrate rule behavior and validation in src/lint/rules/tests/.
+The linting system is implemented primarily in Rust under the src/lint directory, with a companion Python port for linting logic. The core architecture centers on:
+- A configuration model (LintCfg) parsed from a JSON file
+- A rule instantiation engine that builds a CurrentRules bundle from configuration
+- An execution engine that traverses the AST and applies rules, plus per-line checks
+- Annotation support to selectively disable rules for specific lines or files
+- Error conversion and reporting via DMLError
 
 ```mermaid
 graph TB
-subgraph "Lint Module"
-A["src/lint/mod.rs<br/>Orchestration, config parsing, annotations"]
-B["src/lint/rules/mod.rs<br/>Rule registry, instantiation, types"]
-C["src/lint/rules/spacing.rs<br/>Spacing rules"]
-D["src/lint/rules/indentation.rs<br/>Indentation rules"]
-E["src/lint/README.md<br/>Architecture notes"]
-F["src/lint/features.md<br/>Supported rules list"]
+subgraph "Rust Lint Module"
+CFG["LintCfg<br/>JSON config model"]
+INST["instantiate_rules()<br/>build CurrentRules"]
+EXEC["begin_style_check()<br/>AST + per-line checks"]
+ANNOT["obtain_lint_annotations()<br/>line/file disables"]
+ERR["post_process_linting_errors()<br/>cleanup"]
+OUT["LinterAnalysis::new()<br/>DMLError[]"]
 end
-subgraph "Examples"
-G["example_files/example_lint_cfg.json<br/>Default config"]
-H["example_files/example_lint_cfg.README<br/>Config usage guide"]
+subgraph "Rule Categories"
+SP["spacing.rs"]
+IN["indentation.rs"]
+LL["linelength.rs"]
 end
-subgraph "Tests"
-I["src/lint/rules/tests/common.rs<br/>Test harness"]
-J["src/lint/rules/tests/spacing/sp_braces.rs<br/>Spacing tests"]
-K["src/lint/rules/tests/indentation/code_block.rs<br/>Indentation tests"]
-end
-A --> B
-B --> C
-B --> D
-A -.-> E
-A -.-> F
-A -.-> G
-A -.-> H
-I --> A
-I --> B
-J --> C
-K --> D
+CFG --> INST --> EXEC
+EXEC --> ANNOT --> ERR --> OUT
+EXEC --> SP
+EXEC --> IN
+EXEC --> LL
 ```
 
 **Diagram sources**
-- [mod.rs](file://src/lint/mod.rs#L1-L587)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L1-L143)
-- [rules/spacing.rs](file://src/lint/rules/spacing.rs#L1-L881)
-- [rules/indentation.rs](file://src/lint/rules/indentation.rs#L1-L695)
-- [README.md](file://src/lint/README.md#L1-L67)
-- [features.md](file://src/lint/features.md#L1-L52)
-- [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-- [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L30)
-- [tests/common.rs](file://src/lint/rules/tests/common.rs#L1-L54)
-- [tests/spacing/sp_braces.rs](file://src/lint/rules/tests/spacing/sp_braces.rs#L1-L95)
-- [tests/indentation/code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L1-L299)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L184)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L245-L265)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L62-L88)
+- [src/lint/rule categories/spacing.rs](file://src/lint/rule categories/spacing.rs)
+- [src/lint/rule categories/indentation.rs](file://src/lint/rule categories/indentation.rs)
+- [src/lint/rule categories/linelength.rs](file://src/lint/rule categories/linelength.rs)
 
 **Section sources**
-- [mod.rs](file://src/lint/mod.rs#L1-L587)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L1-L143)
-- [README.md](file://src/lint/README.md#L1-L67)
-- [features.md](file://src/lint/features.md#L1-L52)
-- [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-- [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L30)
-- [tests/common.rs](file://src/lint/rules/tests/common.rs#L1-L54)
-- [tests/spacing/sp_braces.rs](file://src/lint/rules/tests/spacing/sp_braces.rs#L1-L95)
-- [tests/indentation/code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L1-L299)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L184)
+- [src/lint/README.md](file://src/lint/README.md#L5-L25)
 
 ## Core Components
-- Lint configuration model and parsing:
-  - LintCfg holds per-rule options and global flags (e.g., annotate_lints).
-  - Configuration is parsed from JSON with unknown field detection and defaults.
-- Rule instantiation:
-  - CurrentRules aggregates all rule instances, enabling/disabling them based on LintCfg.
-- Style checking pipeline:
-  - begin_style_check traverses the AST and collects violations.
-  - Per-line checks (e.g., trailing spaces, long lines, tabs) run after AST traversal.
-  - Per-file/per-line annotations allow selective suppression of violations.
-- Error reporting:
-  - Violations are emitted as DMLError with optional rule annotation.
+- LintCfg: Deserializes the lint configuration JSON into a strongly typed model. Unknown fields are captured for diagnostics. Defaults enable most rules with sensible thresholds.
+- CurrentRules: A bundle of instantiated rule instances derived from LintCfg. Each rule carries an enabled flag and optional parameters.
+- LinterAnalysis: Orchestrates lint execution for a single file, converting raw style errors into DMLError with optional rule annotations.
+- RuleType: Enumerated rule identifiers used for selective disabling via annotations.
+- Execution pipeline: AST traversal with style_check() per node, followed by per-line checks (tabs, long lines, trailing spaces), annotation filtering, and post-processing.
 
-Key implementation references:
-- Configuration parsing and defaults: [LintCfg](file://src/lint/mod.rs#L68-L157)
-- Instantiation of rules: [instantiate_rules](file://src/lint/mod.rs#L43-L64), [CurrentRules](file://src/lint/rules/mod.rs#L22-L41)
-- Style checking entry point: [begin_style_check](file://src/lint/mod.rs#L209-L229)
-- Annotation parsing and application: [obtain_lint_annotations](file://src/lint/mod.rs#L252-L364), [remove_disabled_lints](file://src/lint/mod.rs#L381-L392)
+Key behaviors:
+- Configuration-driven enabling/disabling and parameterization
+- Per-line checks complement AST-based checks
+- Selective rule suppression via dml-lint annotations
+- Post-processing to avoid redundant or conflicting errors
 
 **Section sources**
-- [mod.rs](file://src/lint/mod.rs#L37-L157)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L22-L64)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L80-L184)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L186-L243)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L36-L88)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L107-L171)
 
 ## Architecture Overview
-The linting pipeline integrates with the analysis engine:
-- After IsolatedAnalysis produces the AST, LinterAnalysis is spawned.
-- begin_style_check performs two passes:
-  - AST-driven checks via rule.style_check implementations.
-  - Line-based checks for spacing and length.
-- Per-line annotations are collected and applied to suppress violations.
+The linting pipeline integrates with the language server’s analysis phase. After IsolatedAnalysis produces an AST, the linter:
+1. Instantiates rules from LintCfg
+2. Traverses the AST to collect style violations
+3. Performs per-line checks (tabs, long lines, trailing)
+4. Applies dml-lint annotations to suppress violations
+5. Post-processes to remove duplicates/conflicts
+6. Converts to DMLError and returns to the server
 
 ```mermaid
 sequenceDiagram
-participant Engine as "Analysis Engine"
-participant Linter as "LinterAnalysis"
-participant Rules as "CurrentRules"
-participant AST as "TopAst"
-participant File as "Source Text"
-Engine->>Linter : "Spawn lint job with AST and file"
-Linter->>Rules : "Instantiate rules from LintCfg"
-Linter->>AST : "Traverse nodes and collect violations"
-AST-->>Linter : "Violations from AST rules"
-Linter->>File : "Per-line checks (tabs, long lines, trailing)"
-Linter->>Linter : "Apply dml-lint annotations"
-Linter-->>Engine : "Vec<DMLError> with optional rule labels"
+participant ISOL as "IsolatedAnalysis"
+participant LINT as "LinterAnalysis : : new"
+participant INST as "instantiate_rules"
+participant AST as "AST.style_check"
+participant LINE as "Per-line checks"
+participant ANNOT as "obtain_lint_annotations"
+participant POST as "post_process_linting_errors"
+participant OUT as "DMLError[]"
+ISOL-->>LINT : "AST + file text"
+LINT->>INST : "build CurrentRules from LintCfg"
+LINT->>AST : "traverse nodes and collect violations"
+LINT->>LINE : "scan lines for tabs/length/trailing"
+LINT->>ANNOT : "parse dml-lint allows"
+LINT->>POST : "remove suppressed/conflicting errors"
+LINT-->>OUT : "return Vec<DMLError>"
 ```
 
 **Diagram sources**
-- [mod.rs](file://src/lint/mod.rs#L182-L229)
-- [README.md](file://src/lint/README.md#L3-L21)
-
-**Section sources**
-- [mod.rs](file://src/lint/mod.rs#L182-L229)
-- [README.md](file://src/lint/README.md#L3-L21)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L214-L243)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L245-L265)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L288-L427)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L62-L88)
 
 ## Detailed Component Analysis
 
-### Configuration Model and Parsing
-- LintCfg fields mirror rule categories:
-  - Spacing: sp_reserved, sp_brace, sp_punct, sp_binop, sp_ternary, sp_ptrdecl, nsp_ptrdecl, nsp_funpar, nsp_inparen, nsp_unary, nsp_trailing.
-  - Indentation: long_lines, indent_size, indent_no_tabs, indent_code_block, indent_closing_brace, indent_paren_expr, indent_switch_case, indent_empty_loop.
-  - Global: annotate_lints.
-- Unknown fields are detected during deserialization and reported to the client.
-- Defaults enable most rules with sensible parameters.
-
-References:
-- [LintCfg struct](file://src/lint/mod.rs#L68-L157)
-- [Default configuration](file://src/lint/mod.rs#L132-L157)
-- [Unknown field detection](file://src/lint/mod.rs#L114-L125)
-
-**Section sources**
-- [mod.rs](file://src/lint/mod.rs#L68-L157)
-
-### Rule Registry and Instantiation
-- CurrentRules aggregates all rule instances with an enabled flag per rule.
-- instantiate_rules maps LintCfg options to rule-specific options and enables rules accordingly.
-
-References:
-- [CurrentRules](file://src/lint/rules/mod.rs#L22-L41)
-- [instantiate_rules](file://src/lint/rules/mod.rs#L43-L64)
-
-**Section sources**
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L22-L64)
-
-### Spacing Rules
-- Implemented in rules/spacing.rs with dedicated structs and argument extractors for each AST node type.
-- Examples include:
-  - SpReserved: spaces around reserved words in specific contexts.
-  - SpBraces: spaces around braces in compound/object/struct/layout/bitfields.
-  - SpBinop: spaces around binary operators.
-  - SpTernary: spaces around ? and :.
-  - SpPunct: spacing after punctuation marks.
-  - NspFunpar/NspInparen/NspUnary/NspPtrDecl/NspTrailing: no-space rules for function name-paren, inside parentheses/brackets, unary ops, pointer decl, trailing whitespace.
-
-References:
-- [Spacing rules module](file://src/lint/rules/spacing.rs#L1-L881)
-- [Supported rules list](file://src/lint/features.md#L5-L17)
-
-**Section sources**
-- [rules/spacing.rs](file://src/lint/rules/spacing.rs#L1-L881)
-- [features.md](file://src/lint/features.md#L5-L17)
-
-### Indentation Rules
-- Implemented in rules/indentation.rs with configurable indentation_spaces inherited from indent_size.
-- Includes:
-  - LongLinesRule: enforces max_length.
-  - IndentNoTabRule: bans tab characters.
-  - IndentCodeBlockRule: aligns block members to expected depth.
-  - IndentClosingBraceRule: aligns closing braces to expected indentation.
-  - IndentParenExprRule: continuation lines inside parentheses align with opening paren.
-  - IndentSwitchCaseRule: case labels and statements indentation.
-  - IndentEmptyLoopRule: semicolon in empty loops indented to body level.
-
-References:
-- [Indentation rules module](file://src/lint/rules/indentation.rs#L1-L695)
-- [Supported rules list](file://src/lint/features.md#L18-L47)
-
-**Section sources**
-- [rules/indentation.rs](file://src/lint/rules/indentation.rs#L1-L695)
-- [features.md](file://src/lint/features.md#L18-L47)
-
-### Per-Line and Per-File Annotations
-- Syntax: comments containing dml-lint: allow=<rule> or allow-file=<rule>.
-- Scope:
-  - allow applies to subsequent lines until a non-comment line or end-of-file.
-  - allow-file applies to the entire file for the named rule.
-- Validation:
-  - Unknown commands and targets produce diagnostics.
-  - Unapplied annotations at EOF are flagged.
-
-References:
-- [Annotation regex and parsing](file://src/lint/mod.rs#L244-L364)
-- [Annotation application](file://src/lint/mod.rs#L381-L392)
-
-**Section sources**
-- [mod.rs](file://src/lint/mod.rs#L244-L392)
-
-### Integration with Analysis Engine
-- LinterAnalysis.new constructs a lint job after AST creation.
-- begin_style_check coordinates AST traversal and per-line checks, then applies annotations and post-processing.
-
-References:
-- [LinterAnalysis::new](file://src/lint/mod.rs#L182-L207)
-- [begin_style_check](file://src/lint/mod.rs#L209-L229)
-- [Architecture notes](file://src/lint/README.md#L3-L21)
-
-**Section sources**
-- [mod.rs](file://src/lint/mod.rs#L182-L229)
-- [README.md](file://src/lint/README.md#L3-L21)
-
-### Practical Examples and Tests
-- Spacing tests demonstrate correct and incorrect spacing around braces.
-- Indentation tests show correct and incorrect indentation across nested constructs.
-
-References:
-- [Spacing brace tests](file://src/lint/rules/tests/spacing/sp_braces.rs#L1-L95)
-- [Indentation code-block tests](file://src/lint/rules/tests/indentation/code_block.rs#L1-L299)
-- [Test harness](file://src/lint/rules/tests/common.rs#L1-L54)
-
-**Section sources**
-- [tests/spacing/sp_braces.rs](file://src/lint/rules/tests/spacing/sp_braces.rs#L1-L95)
-- [tests/indentation/code_block.rs](file://src/lint/rules/tests/indentation/code_block.rs#L1-L299)
-- [tests/common.rs](file://src/lint/rules/tests/common.rs#L1-L54)
-
-## Dependency Analysis
-The lint module depends on:
-- Analysis engine types for AST and ranges.
-- VFS for file text access.
-- Serde for configuration serialization/deserialization.
-- Regex for annotation parsing.
+### Configuration Management
+- LintCfg supports granular toggles and parameters for each rule category. Unknown fields are captured during deserialization for user feedback.
+- Defaults enable a comprehensive set of rules with safe thresholds (e.g., long-lines default length, indentation default spacing).
+- Runtime setup normalizes shared parameters (e.g., propagating indent size to related indentation rules).
 
 ```mermaid
-graph LR
-Mod["src/lint/mod.rs"] --> RulesMod["src/lint/rules/mod.rs"]
-RulesMod --> Spacing["src/lint/rules/spacing.rs"]
-RulesMod --> Indent["src/lint/rules/indentation.rs"]
-Mod --> Analysis["Analysis types (AST, ranges)"]
-Mod --> VFS["VFS (TextFile)"]
-Mod --> Serde["Serde (JSON)"]
-Mod --> Regex["Regex (annotations)"]
+flowchart TD
+A["Read JSON config"] --> B["Deserialize to LintCfg"]
+B --> C{"Unknown fields?"}
+C --> |Yes| D["Record unknowns for notification"]
+C --> |No| E["Proceed"]
+E --> F["setup_indentation_size()"]
+F --> G["Instantiate CurrentRules"]
 ```
 
 **Diagram sources**
-- [mod.rs](file://src/lint/mod.rs#L1-L35)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L1-L21)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L76)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L135-L148)
+- [src/lint/rule categories/indentation.rs](file://src/lint/rule categories/indentation.rs#L40-L58)
 
 **Section sources**
-- [mod.rs](file://src/lint/mod.rs#L1-L35)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L1-L21)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L76)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L135-L184)
+- [src/lint/rule categories/indentation.rs](file://src/lint/rule categories/indentation.rs#L40-L58)
+
+### Rule Categories and Execution Engine
+- Spacing rules enforce spacing around operators, punctuation, braces, and pointer declarations, and disallow unintended spaces in various contexts.
+- Indentation rules enforce indentation sizes, prohibit tabs, align closing braces, handle code blocks and parenthetical continuations, manage switch cases and empty loops, and align continuation lines.
+- Line-length rules enforce maximum line length and prescribe where to break long expressions and declarations.
+
+Execution engine:
+- AST traversal: Each AST node implements style_check() to traverse children and accumulate violations.
+- Per-line checks: Tabs, long lines, and trailing spaces are scanned line-by-line.
+- Annotation filtering: dml-lint annotations allow suppressing specific rules for whole-file or line-scoped contexts.
+- Post-processing: Removes errors whose rows are already flagged by tab-indentation violations to avoid duplication.
+
+```mermaid
+classDiagram
+class CurrentRules {
++sp_reserved
++sp_brace
++sp_punct
++sp_binop
++sp_ternary
++sp_ptrdecl
++nsp_ptrdecl
++nsp_funpar
++nsp_inparen
++nsp_unary
++nsp_trailing
++long_lines
++indent_no_tabs
++indent_code_block
++indent_closing_brace
++indent_paren_expr
++indent_switch_case
++indent_empty_loop
++indent_continuation_line
++break_func_call_open_paren
++break_method_output
++break_conditional_expression
++break_before_binary_op
+}
+class Rule {
+<<trait>>
++name() str
++description() str
++get_rule_type() RuleType
++create_err(range) DMLStyleError
+}
+class LongLinesRule
+class IndentNoTabRule
+class IndentCodeBlockRule
+class IndentParenExprRule
+class IndentSwitchCaseRule
+class IndentEmptyLoopRule
+class IndentContinuationLineRule
+class SpReservedRule
+class SpBracesRule
+class SpBinopRule
+class SpTernaryRule
+class SpPunctRule
+class NspFunparRule
+class NspInparenRule
+class NspUnaryRule
+class NspTrailingRule
+class SpPtrDeclRule
+class NspPtrDeclRule
+CurrentRules --> LongLinesRule
+CurrentRules --> IndentNoTabRule
+CurrentRules --> IndentCodeBlockRule
+CurrentRules --> IndentParenExprRule
+CurrentRules --> IndentSwitchCaseRule
+CurrentRules --> IndentEmptyLoopRule
+CurrentRules --> IndentContinuationLineRule
+CurrentRules --> SpReservedRule
+CurrentRules --> SpBracesRule
+CurrentRules --> SpBinopRule
+CurrentRules --> SpTernaryRule
+CurrentRules --> SpPunctRule
+CurrentRules --> NspFunparRule
+CurrentRules --> NspInparenRule
+CurrentRules --> NspUnaryRule
+CurrentRules --> NspTrailingRule
+CurrentRules --> SpPtrDeclRule
+CurrentRules --> NspPtrDeclRule
+Rule <|.. LongLinesRule
+Rule <|.. IndentNoTabRule
+Rule <|.. IndentCodeBlockRule
+Rule <|.. IndentParenExprRule
+Rule <|.. IndentSwitchCaseRule
+Rule <|.. IndentEmptyLoopRule
+Rule <|.. IndentContinuationLineRule
+Rule <|.. SpReservedRule
+Rule <|.. SpBracesRule
+Rule <|.. SpBinopRule
+Rule <|.. SpTernaryRule
+Rule <|.. SpPunctRule
+Rule <|.. NspFunparRule
+Rule <|.. NspInparenRule
+Rule <|.. NspUnaryRule
+Rule <|.. NspTrailingRule
+Rule <|.. SpPtrDeclRule
+Rule <|.. NspPtrDeclRule
+```
+
+**Diagram sources**
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L36-L88)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L90-L171)
+- [src/lint/rule categories/spacing.rs](file://src/lint/rule categories/spacing.rs)
+- [src/lint/rule categories/indentation.rs](file://src/lint/rule categories/indentation.rs)
+- [src/lint/rule categories/linelength.rs](file://src/lint/rule categories/linelength.rs)
+
+**Section sources**
+- [src/lint/features.md](file://src/lint/features.md#L9-L75)
+- [src/lint/README.md](file://src/lint/README.md#L26-L71)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L90-L171)
+
+### Error Reporting and Severity
+- Each rule creates DMLStyleError with a rule identifier and type, then converts to DMLError with optional prefixing of the rule name when annotation is enabled.
+- Severity is controlled by the rule’s configuration; the lint engine surfaces violations as DMLError with appropriate severities.
+
+```mermaid
+flowchart TD
+A["Rule violation found"] --> B["create_err(range) -> DMLStyleError"]
+B --> C["LinterAnalysis::new() wraps with file path"]
+C --> D{"annotate_lints?"}
+D --> |Yes| E["Prefix rule name in description"]
+D --> |No| F["Keep original description"]
+E --> G["Convert to DMLError"]
+F --> G
+```
+
+**Diagram sources**
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L95-L104)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L224-L234)
+
+**Section sources**
+- [src/lint/mod.rs](file://src/lint/mod.rs#L186-L243)
+
+### Annotation-Based Suppression
+- dml-lint annotations allow disabling specific rules for a line or the entire file.
+- Parsing captures allowed rule targets and validates commands and targets.
+- Disabled violations are filtered out before reporting.
+
+```mermaid
+flowchart TD
+S["Scan file lines"] --> P["Parse dml-lint: allow/allow-file"]
+P --> V{"Valid command/target?"}
+V --> |No| W["Report configuration error"]
+V --> |Yes| X["Record Allow(rule_type)"]
+X --> Y["Filter violations by Allow sets"]
+W --> Z["Continue"]
+Y --> Z
+```
+
+**Diagram sources**
+- [src/lint/mod.rs](file://src/lint/mod.rs#L288-L427)
+
+**Section sources**
+- [src/lint/mod.rs](file://src/lint/mod.rs#L288-L427)
+
+### Rule Development Framework and Testing
+- Add a new rule by implementing a struct with a check() method and a Rule trait implementation, registering it in CurrentRules, and wiring its options into LintCfg.
+- Tests use a helper to build an AST from a snippet and assert expected violations.
+- The test suite validates configuration parsing, unknown field detection, and annotation parsing/apply behavior.
+
+```mermaid
+sequenceDiagram
+participant T as "Test"
+participant U as "create_ast_from_snippet"
+participant R as "assert_snippet"
+participant E as "ExpectedDMLStyleError[]"
+T->>U : "Build AST from source"
+T->>R : "Run snippet with set_up()"
+R-->>E : "Collect expected ranges + rule types"
+T-->>T : "Assert actual vs expected"
+```
+
+**Diagram sources**
+- [src/lint/mod.rs](file://src/lint/mod.rs#L444-L621)
+
+**Section sources**
+- [src/lint/README.md](file://src/lint/README.md#L54-L71)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L444-L621)
+
+### Python Port Linting Engine (Alternative Implementation)
+The Python port provides a simpler, file-content-centric lint engine with:
+- A base LintRule class and several built-in rules (indentation, spacing, long lines)
+- A LintEngine that loads configuration, registers default rules, and applies user overrides
+- Severity levels mapped to diagnostic severities
+
+This is useful for environments where the Rust engine is not used, or for prototyping rule logic.
+
+**Section sources**
+- [python-port/dml_language_server/lint/__init__.py](file://python-port/dml_language_server/lint/__init__.py#L196-L288)
+- [python-port/dml_language_server/lint/rules/__init__.py](file://python-port/dml_language_server/lint/rules/__init__.py#L34-L231)
+
+## Dependency Analysis
+- LintCfg depends on serde for JSON parsing and on rule option structs for parameters.
+- CurrentRules aggregates rule structs and exposes unified check interfaces.
+- LinterAnalysis depends on the AST, file text, and CurrentRules to produce DMLError.
+- RuleType enables annotation-based suppression by rule identity.
+
+```mermaid
+graph LR
+LintCfg --> CurrentRules
+CurrentRules --> LongLinesRule
+CurrentRules --> IndentNoTabRule
+CurrentRules --> IndentCodeBlockRule
+CurrentRules --> IndentParenExprRule
+CurrentRules --> IndentSwitchCaseRule
+CurrentRules --> IndentEmptyLoopRule
+CurrentRules --> IndentContinuationLineRule
+CurrentRules --> SpReservedRule
+CurrentRules --> SpBracesRule
+CurrentRules --> SpBinopRule
+CurrentRules --> SpTernaryRule
+CurrentRules --> SpPunctRule
+CurrentRules --> NspFunparRule
+CurrentRules --> NspInparenRule
+CurrentRules --> NspUnaryRule
+CurrentRules --> NspTrailingRule
+CurrentRules --> SpPtrDeclRule
+CurrentRules --> NspPtrDeclRule
+LinterAnalysis --> CurrentRules
+LinterAnalysis --> DMLError
+```
+
+**Diagram sources**
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L36-L88)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L214-L243)
+
+**Section sources**
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L36-L88)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L214-L243)
 
 ## Performance Considerations
-- AST traversal is O(nodes) in the AST size.
-- Per-line checks iterate over lines; complexity is O(L) where L is number of lines.
-- Annotation parsing uses a single pass with regex scanning; complexity is O(L).
-- Post-processing filters errors by range intersection; cost is proportional to number of violations.
-- Recommendations:
-  - Keep rule sets minimal for large codebases to reduce AST traversal overhead.
-  - Prefer disabling heavy rules (e.g., long_lines) when not needed.
-  - Use per-file/per-line annotations to selectively suppress noisy rules in specific contexts.
-
-[No sources needed since this section provides general guidance]
+- Minimize allocations by reusing vectors and avoiding repeated string copies during per-line scans.
+- Keep rule checks O(n) over the number of lines/nodes; avoid nested scans where possible.
+- Use early exits in rule checks when conditions are not met.
+- Batch error construction and conversion to DMLError to reduce overhead.
+- Consider caching rule options derived from LintCfg (e.g., normalized indentation sizes) to avoid recomputation.
 
 ## Troubleshooting Guide
-Common issues and remedies:
-- Unknown configuration fields:
-  - Detected during parsing; review example configuration and remove unsupported keys.
-  - Reference: [parse_lint_cfg](file://src/lint/mod.rs#L37-L64), [try_deserialize](file://src/lint/mod.rs#L114-L125)
-- Invalid dml-lint annotations:
-  - Unknown commands or rule names produce diagnostics; fix spelling or remove the annotation.
-  - Reference: [obtain_lint_annotations](file://src/lint/mod.rs#L285-L324)
-- Unapplied annotations at EOF:
-  - Indicates allow annotations without effect; remove or reposition.
-  - Reference: [obtain_lint_annotations](file://src/lint/mod.rs#L346-L363)
-- Rules not triggering:
-  - Verify the rule is enabled in LintCfg; confirm options are set appropriately.
-  - Reference: [instantiate_rules](file://src/lint/rules/mod.rs#L43-L64)
-- Balancing strictness and productivity:
-  - Start with defaults; selectively disable or adjust rules per team preference.
-  - Use per-file/per-line annotations for exceptions rather than blanket disables.
+Common issues and resolutions:
+- Unknown fields in configuration: Detected during deserialization; review the lint config and remove unsupported keys.
+- dml-lint annotation misuse: Invalid commands or targets produce configuration errors; fix the annotation text or rule name.
+- Suppressed errors not appearing: Verify allow/allow-file scopes and ensure the rule type matches the targeted rule.
+- Post-processing removing expected errors: Some errors are intentionally removed if they overlap with indentation-no-tabs violations; adjust expectations accordingly.
 
 **Section sources**
-- [mod.rs](file://src/lint/mod.rs#L37-L64)
-- [mod.rs](file://src/lint/mod.rs#L114-L125)
-- [mod.rs](file://src/lint/mod.rs#L285-L363)
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L43-L64)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L135-L148)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L320-L398)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L401-L427)
 
 ## Conclusion
-The linting system provides a modular, configurable framework for enforcing style consistency in DML code. Its pluggable rule architecture, robust configuration model, and per-line/per-file annotation support integrate tightly with the analysis engine to deliver real-time feedback. By leveraging defaults, targeted adjustments, and annotations, teams can balance strictness with developer productivity while maintaining code quality.
-
-[No sources needed since this section summarizes without analyzing specific files]
+The linting system provides a robust, configurable, and extensible framework for enforcing DML style guidelines. Its pluggable architecture, clear separation of AST-based and per-line checks, and annotation-driven suppression make it suitable for diverse development workflows. With proper configuration and CI integration, it helps maintain consistent code quality across teams.
 
 ## Appendices
 
-### Configuration File Format and Options
-- Enable/disable rules by including or omitting entries.
-- Configure rules with nested objects (e.g., long_lines, indent_size).
-- annotate_lints controls whether rule names are included in diagnostic messages.
-- Example configuration and usage guide:
-  - [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-  - [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L30)
+### Configuration File Format and Examples
+- LintCfg is a JSON object with optional fields for each rule category. Unknown fields are captured for diagnostics.
+- Example configuration and its documentation are provided alongside the repository.
 
 **Section sources**
-- [example_lint_cfg.json](file://example_files/example_lint_cfg.json#L1-L23)
-- [example_lint_cfg.README](file://example_files/example_lint_cfg.README#L1-L30)
+- [src/lint/mod.rs](file://src/lint/mod.rs#L49-L76)
+- [example_files/example_lint_cfg.json](file://example_files/example_lint_cfg.json)
+- [example_files/example_lint_cfg.README](file://example_files/example_lint_cfg.README)
 
-### Rule Categories and Parameters
-- Spacing rules:
-  - sp_reserved, sp_brace, sp_punct, sp_binop, sp_ternary, sp_ptrdecl, nsp_ptrdecl, nsp_funpar, nsp_inparen, nsp_unary, nsp_trailing.
-  - Reference: [features.md](file://src/lint/features.md#L5-L17)
-- Indentation rules:
-  - long_lines (max_length), indent_no_tabs, indent_code_block (indentation_spaces), indent_closing_brace (indentation_spaces), indent_paren_expr, indent_switch_case (indentation_spaces), indent_empty_loop (indentation_spaces).
-  - Reference: [features.md](file://src/lint/features.md#L18-L47)
+### Rule Categories Overview
+- Spacing rules: Enforce spacing around operators, punctuation, braces, and pointer declarations; disallow unintended spaces.
+- Indentation rules: Enforce indentation size, prohibit tabs, align closing braces, handle code blocks and parenthetical continuations, manage switch cases and empty loops, align continuation lines.
+- Line-length rules: Enforce maximum line length and prescribe where to break long expressions and declarations.
 
 **Section sources**
-- [features.md](file://src/lint/features.md#L5-L47)
+- [src/lint/features.md](file://src/lint/features.md#L9-L75)
 
-### Extending the Linting System
-- Add a new rule:
-  - Define rule struct and options struct(s).
-  - Implement Rule trait and a check method.
-  - Add extraction helpers to derive arguments from AST nodes.
-  - Register the rule in CurrentRules and mapping in instantiate_rules.
-  - Add tests under the appropriate category.
-- References:
-  - [Rule trait](file://src/lint/rules/mod.rs#L66-L81)
-  - [RuleType mapping](file://src/lint/rules/mod.rs#L107-L142)
-  - [Architecture notes](file://src/lint/README.md#L50-L67)
+### Creating Custom Rules
+- Implement a rule struct with a check() method and Rule trait implementation.
+- Register the rule in CurrentRules and wire its options into LintCfg.
+- Add tests using the snippet-based testing helper to assert expected violations.
 
 **Section sources**
-- [rules/mod.rs](file://src/lint/rules/mod.rs#L66-L142)
-- [README.md](file://src/lint/README.md#L50-L67)
+- [src/lint/README.md](file://src/lint/README.md#L54-L71)
+- [src/lint/rules/mod.rs](file://src/lint/rules/mod.rs#L90-L171)
+
+### Integrating Linting into Workflows
+- IDE integration: Surface DMLError diagnostics in editors via the language server.
+- Continuous Integration: Run linting as part of pre-commit hooks or CI jobs to enforce style standards.
+- Configuration: Commit a lint configuration file to standardize team-wide rules.
+
+[No sources needed since this section provides general guidance]
