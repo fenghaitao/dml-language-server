@@ -83,11 +83,17 @@ for k in sorted(data.keys()):
 echo "DML files: ${DML_FILES[*]}"
 
 # ── run dfa ───────────────────────────────────────────────────────────────────
+# Use / as the workspace root so that system DML files (under $SIMICS_ROOT)
+# also become SCIP documents with source locations, rather than external
+# symbols. The DLS resolves all transitively imported files automatically;
+# we only need to pass the top-level module file(s) explicitly.
+# Relative paths in the index will be absolute-looking (e.g.
+# nfs/site/.../simics/base/bank.dml) but are still valid SCIP paths.
 
 echo "Running dfa..."
 "$DFA" \
     --compile-info "$MODULE_COMPILE_INFO" \
-    --workspace "$SCRIPT_DIR" \
+    --workspace / \
     --scip-output "$SCIP_OUT" \
     "$DLS" \
     "${DML_FILES[@]}"
