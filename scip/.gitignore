@@ -1,0 +1,4 @@
+scip_pb2.py
+__pycache__/
+.venv/
+uv.lock
