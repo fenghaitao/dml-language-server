@@ -1031,16 +1031,19 @@ impl RequestAction for ExportScipRequest {
                 vec![]
             };
 
-        // Wait for device analyses to be ready
+        // Wait for device analyses to be ready. Existence (not Work) is
+        // required here: Work only checks that nothing is currently queued,
+        // which is true before analysis has even been enqueued and races
+        // with export running before any device analysis exists.
         if !device_paths.is_empty() {
             ctx.wait_for_state(
                 AnalysisProgressKind::Device,
-                AnalysisWaitKind::Work,
+                AnalysisWaitKind::Existence,
                 AnalysisCoverageSpec::Paths(device_paths.clone())).ok();
         } else {
             ctx.wait_for_state(
                 AnalysisProgressKind::Device,
-                AnalysisWaitKind::Work,
+                AnalysisWaitKind::Existence,
                 AnalysisCoverageSpec::All).ok();
         }
 
@@ -1243,15 +1246,17 @@ impl RequestAction for ExportObjectHierarchyRequest {
                 vec![]
             };
 
+        // See ExportScipRequest::handle: Existence, not Work, is required
+        // to actually wait for device analysis results to exist.
         if !device_paths.is_empty() {
             ctx.wait_for_state(
                 AnalysisProgressKind::Device,
-                AnalysisWaitKind::Work,
+                AnalysisWaitKind::Existence,
                 AnalysisCoverageSpec::Paths(device_paths.clone())).ok();
         } else {
             ctx.wait_for_state(
                 AnalysisProgressKind::Device,
-                AnalysisWaitKind::Work,
+                AnalysisWaitKind::Existence,
                 AnalysisCoverageSpec::All).ok();
         }
 
